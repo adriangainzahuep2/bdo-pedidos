@@ -1,0 +1,200 @@
+# =============================================================================
+# Servicio de pedidos - configuracion por defecto (entorno local / tests)
+#
+# En los despliegues reales los valores sensibles (token del proveedor, secretos
+# de los clientes OAuth) NO viven aqui: llegan por variable de entorno o por
+# Spring Cloud Config con cifrado JCE.
+# =============================================================================
+server:
+  port: ${SERVER_PORT:8081}
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+
+spring:
+  application:
+    name: pedidos-api
+  main:
+    banner-mode: "off"
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+  # --- Persistencia reactiva (R2DBC) -----------------------------------------
+  r2dbc:
+    url: "r2dbc:h2:mem:///pedidos?options=DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE"
+    username: sa
+    password: ""
+    pool:
+      enabled: true
+      initial-size: 2
+      max-size: 20
+      max-idle-time: 30m
+
+  # --- Esquema ---------------------------------------------------------------
+  # H2 es en memoria: el esquema se crea en cada arranque.
+  # En PostgreSQL el esquema lo gestiona el pipeline de migraciones (spring.sql.init.mode=never).
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data.sql
+      platform: h2
+      encoding: UTF-8
+
+  # --- Seguridad (Resource Server OAuth2 / JWT) ------------------------------
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:9000}
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/oauth2/jwks}
+
+  # --- Descubrimiento de servicios ------------------------------------------
+  cloud:
+    discovery:
+      enabled: false
+
+# -----------------------------------------------------------------------------
+# Configuracion propia de la aplicacion
+# -----------------------------------------------------------------------------
+app:
+  proveedor:
+    # URL del endpoint de tarifas del proveedor logistico.
+    url: ${PROVEEDOR_LOGISTICO_URL:http://localhost:8090/api/tarifas}
+    # El token NUNCA esta en el codigo fuente: lo inyecta el entorno.
+    token: ${PROVEEDOR_LOGISTICO_TOKEN:}
+    # reactivo (WebClient) | bloqueante (RestTemplate)
+    modo: ${PROVEEDOR_LOGISTICO_MODO:reactivo}
+    connect-timeout: 1s
+    timeout-por-intento: 6s
+    timeout-global: 8s
+    max-intentos: 3
+    backoff-inicial: 200ms
+    backoff-multiplicador: 2.0
+    backoff-jitter: 0.5
+
+  clientes:
+    url: ${CLIENTES_SERVICE_URL:http://pedidos-cliente}
+    load-balanced: ${CLIENTES_LOAD_BALANCED:true}
+    timeout: 2s
+
+  recuperacion:
+    confirmaciones:
+      lease-ms: 120000
+      intervalo-ms: 60000
+
+# -----------------------------------------------------------------------------
+# Resiliencia (Resilience4j)
+# -----------------------------------------------------------------------------
+resilience4j:
+  circuitbreaker:
+    instances:
+      proveedorLogistico:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        # Una llamada lenta es la que supera el maximo documentado del proveedor (5 s).
+        slow-call-duration-threshold: 5s
+        slow-call-rate-threshold: 80
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        # Que cuenta como fallo lo decide el codigo: 5xx, 429, timeouts, errores de
+        # conexion y respuestas invalidas. Un 4xx no abre el circuito (el error es
+        # nuestro, el proveedor esta sano).
+        record-failure-predicate: com.bdo.pedidos.api.proveedor.ClasificadorFallosProveedor$CuentaParaElCircuito
+      servicioClientes:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 20s
+        permitted-number-of-calls-in-half-open-state: 3
+  ratelimiter:
+    instances:
+      proveedorLogistico:
+        limit-for-period: 50
+        limit-refresh-period: 1s
+        timeout-duration: 0
+  bulkhead:
+    instances:
+      proveedorLogistico:
+        max-concurrent-calls: 32
+        max-wait-duration: 0
+  # Los reintentos NO se configuran aqui: se derivan de app.proveedor.* (max-intentos,
+  # backoff-*) para que los adaptadores reactivo y bloqueante usen la misma politica.
+
+# -----------------------------------------------------------------------------
+# Observabilidad
+# -----------------------------------------------------------------------------
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  health:
+    r2dbc:
+      enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.bdo.pedidos: INFO
+    org.springframework.r2dbc.core: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+
+---
+# =============================================================================
+# Perfil postgres: base de datos relacional de produccion
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: postgres
+  r2dbc:
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5432/pedidos}
+    username: ${SPRING_R2DBC_USERNAME:pedidos}
+    password: ${SPRING_R2DBC_PASSWORD:pedidos}
+  sql:
+    init:
+      mode: never
+      platform: postgresql
+
+---
+# =============================================================================
+# Perfil eureka: registro en el servidor de descubrimiento
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: eureka
+  cloud:
+    discovery:
+      enabled: true
+    # La cache de instancias de Spring Cloud LoadBalancer dura 35 s por defecto: un servicio
+    # que se registra justo despues de una consulta seria invisible durante ese tiempo
+    # (y se responderia 503). Se alinea con el refresco del registro de Eureka.
+    loadbalancer:
+      cache:
+        ttl: 5s
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    registry-fetch-interval-seconds: 5
+  instance:
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+  server:
+    wait-time-in-ms-when-sync-empty: 0

@@ -1,0 +1,117 @@
+/* Consola de pedidos: HTML + CSS + JavaScript sin dependencias ni paso de build.
+   (El enunciado pide HTML, CSS y JavaScript; el backend es el foco de la prueba.) */
+:root {
+    --azul: #0a4d8c;
+    --azul-claro: #e8f0f9;
+    --gris: #5b6770;
+    --borde: #d7dee5;
+    --fondo: #f4f6f8;
+    --verde: #1c7c3f;
+    --rojo: #b3261e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--fondo);
+    color: #1d252c;
+    line-height: 1.5;
+}
+
+header {
+    background: var(--azul);
+    color: #fff;
+    padding: 1.2rem 1.6rem;
+}
+
+header h1 { margin: 0; font-size: 1.35rem; }
+header .sub { margin: 0.2rem 0 0; opacity: 0.85; font-size: 0.9rem; }
+
+main {
+    max-width: 960px;
+    margin: 1.5rem auto;
+    padding: 0 1rem;
+    display: grid;
+    gap: 1rem;
+}
+
+.card {
+    background: #fff;
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    padding: 1rem 1.2rem 1.2rem;
+}
+
+.card h2 {
+    margin: 0 0 0.6rem;
+    font-size: 1.05rem;
+    color: var(--azul);
+    border-bottom: 1px solid var(--borde);
+    padding-bottom: 0.4rem;
+}
+
+.nota { color: var(--gris); font-size: 0.88rem; margin-top: 0; }
+
+.fila {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: flex-end;
+    margin-bottom: 0.6rem;
+}
+
+label { display: flex; flex-direction: column; font-size: 0.8rem; color: var(--gris); }
+
+input, textarea {
+    font: inherit;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--borde);
+    border-radius: 4px;
+    background: #fff;
+    color: inherit;
+}
+
+input:focus, textarea:focus { outline: 2px solid var(--azul-claro); border-color: var(--azul); }
+
+textarea { width: 100%; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.8rem; }
+
+button {
+    font: inherit;
+    padding: 0.5rem 0.9rem;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+
+button.primario { background: var(--azul); color: #fff; }
+button.primario:hover { background: #07396a; }
+button.secundario { background: #fff; color: var(--azul); border-color: var(--azul); }
+button.secundario:hover { background: var(--azul-claro); }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+table.lineas { width: 100%; border-collapse: collapse; margin-bottom: 0.6rem; }
+table.lineas th, table.lineas td { padding: 0.35rem; border-bottom: 1px solid var(--borde); text-align: left; }
+table.lineas th { font-size: 0.78rem; color: var(--gris); font-weight: 600; }
+table.lineas input { width: 100%; }
+
+.salida {
+    background: #12212e;
+    color: #d7e6f2;
+    padding: 0.7rem 0.9rem;
+    border-radius: 6px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 1.2rem;
+    margin: 0.4rem 0 0;
+}
+
+.estado { font-size: 0.85rem; margin-left: 0.6rem; }
+.estado.ok { color: var(--verde); }
+.estado.error { color: var(--rojo); }
+
+footer { text-align: center; color: var(--gris); font-size: 0.8rem; padding: 1.5rem 1rem 2.5rem; }
+code { background: #eef1f4; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }

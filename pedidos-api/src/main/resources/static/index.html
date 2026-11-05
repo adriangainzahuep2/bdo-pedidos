@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consola de pedidos · BDO</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+    <h1>Consola de pedidos</h1>
+    <p class="sub">API Gateway · <code id="base">http://localhost:8080</code></p>
+</header>
+
+<main>
+    <section class="card">
+        <h2>1 · Token</h2>
+        <p class="nota">
+            En producción este token llega con <code>authorization_code</code> + PKCE y lo entrega el
+            servidor de autorización. En esta demo se pega uno obtenido con
+            <code>client_credentials</code>:
+        </p>
+        <textarea id="token" rows="4" placeholder="eyJhbGciOiJSUzI1NiIs..."></textarea>
+        <button id="guardar-token" class="primario">Guardar token</button>
+        <span id="estado-token" class="estado"></span>
+    </section>
+
+    <section class="card">
+        <h2>2 · Cliente</h2>
+        <div class="fila">
+            <input id="cliente-nombre" type="text" placeholder="Nombre del cliente" value="Empresa Demo S.L.">
+            <input id="cliente-email" type="email" placeholder="email@empresa.com" value="demo@bdo-es.example">
+            <button id="crear-cliente" class="primario">Dar de alta</button>
+        </div>
+        <pre id="salida-cliente" class="salida"></pre>
+    </section>
+
+    <section class="card">
+        <h2>3 · Pedido</h2>
+        <div class="fila">
+            <label>Cliente (id) <input id="pedido-cliente-id" type="number" value="1" min="1"></label>
+            <label>Código postal <input id="pedido-cp" type="text" value="43840"></label>
+        </div>
+        <table class="lineas">
+            <thead>
+            <tr>
+                <th>Producto</th><th>Cantidad</th><th>Precio unitario</th><th>Peso unit. (kg)</th><th></th>
+            </tr>
+            </thead>
+            <tbody id="lineas"></tbody>
+        </table>
+        <button id="anadir-linea" class="secundario">Añadir línea</button>
+        <button id="crear-pedido" class="primario">Crear pedido</button>
+        <pre id="salida-pedido" class="salida"></pre>
+    </section>
+
+    <section class="card">
+        <h2>4 · Confirmación</h2>
+        <p class="nota">
+            Confirma el pedido: el servidor pide el coste de envío al proveedor logístico
+            (simulado), lo guarda y actualiza el total.
+        </p>
+        <div class="fila">
+            <label>Pedido (id) <input id="confirmar-id" type="number" value="1" min="1"></label>
+            <button id="confirmar" class="primario">Confirmar</button>
+            <button id="consultar" class="secundario">Consultar</button>
+        </div>
+        <pre id="salida-confirmacion" class="salida"></pre>
+    </section>
+</main>
+
+<footer>
+    <p>Prueba técnica BDO · Java Senior · arquitectura de microservicios (Spring Boot 3, WebFlux,
+        R2DBC, OAuth2/JWT, Eureka, Spring Cloud Gateway, Resilience4j).</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

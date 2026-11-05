@@ -6,6 +6,7 @@ entidades, y por último cada flujo paso a paso y el catálogo de clases y funci
 
 Los diagramas están en [Mermaid](https://mermaid.js.org/) (GitHub los dibuja directamente). Los
 nombres de clases, métodos, columnas y propiedades son los del código.
+Los patrones de diseño aplicados están resumidos en [PATRONES.md](PATRONES.md).
 
 Índice:
 

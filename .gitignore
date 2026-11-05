@@ -46,3 +46,5 @@ failsafe-reports/
 
 # --- Documentacion recibida de BDO (no se publica) -----------------------------
 tasks/
+__pycache__/
+*.pyc

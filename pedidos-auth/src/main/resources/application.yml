@@ -1,0 +1,64 @@
+# =============================================================================
+# Servidor de autorizacion OAuth2 (Spring Authorization Server)
+#
+# Los secretos NO estan en el codigo fuente: llegan por variable de entorno
+# (o por Spring Cloud Config cifrado). Si faltan, la aplicacion falla al arrancar.
+# =============================================================================
+server:
+  port: ${SERVER_PORT:9000}
+  shutdown: graceful
+
+spring:
+  application:
+    name: pedidos-auth
+  main:
+    banner-mode: "off"
+
+auth:
+  issuer: ${AUTH_ISSUER:http://localhost:9000}
+  access-token-minutos: 60
+  audiencias:
+    - pedidos-api
+    - pedidos-cliente
+    - pedidos-gateway
+
+  # Usuario de la consola web (flujo authorization_code + PKCE).
+  usuario: ${AUTH_USUARIO:demo}
+  password: ${AUTH_USUARIO_PASSWORD:}
+
+  clientes:
+    # Cliente de servicio: lo usan el gateway y los scripts (client_credentials).
+    - client-id: ${AUTH_CLIENT_ID_GATEWAY:pedidos-gateway}
+      client-secret: ${AUTH_CLIENT_SECRET_GATEWAY:}
+      scopes:
+        - pedidos.read
+        - pedidos.write
+        - clientes.read
+        - clientes.write
+      grant-types:
+        - client_credentials
+
+    # Cliente de la consola web: publico, con PKCE (nunca guarda secretos).
+    - client-id: ${AUTH_CLIENT_ID_UI:consola-web}
+      client-secret: ""
+      publico: true
+      scopes:
+        - pedidos.read
+        - pedidos.write
+        - clientes.read
+        - clientes.write
+      grant-types:
+        - authorization_code
+        - refresh_token
+      redirect-uri: ${AUTH_UI_REDIRECT_URI:http://localhost:8080/callback}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    root: INFO
+    org.springframework.security: INFO

@@ -1,0 +1,65 @@
+# =============================================================================
+# Configuracion del servicio de PEDIDOS servida por el Config Server (perfil native).
+#
+# Secretos: el token del proveedor logistico NO se guarda aqui en claro. Para
+# guardarlo cifrado con JCE:
+#   1) arrancar el Config Server con CONFIG_ENCRYPT_KEY definida en el entorno;
+#   2) curl -s -X POST http://localhost:8888/encrypt -H 'Content-Type: text/plain' -d 'el-token'
+#   3) sustituir la linea "token" por:   token: "{cipher}<resultado>"
+# Mientras no se haga, el valor se toma de la variable de entorno del servicio.
+#
+# Nota: en esta entrega los microservicios leen su configuracion local + entorno y
+# NO importan el Config Server (ver README, "Que queda fuera").
+# =============================================================================
+app:
+  proveedor:
+    url: ${PROVEEDOR_LOGISTICO_URL:http://proveedor-logistico:8090/api/tarifas}
+    token: ${PROVEEDOR_LOGISTICO_TOKEN}
+    modo: reactivo
+    connect-timeout: 1s
+    timeout-por-intento: 6s
+    timeout-global: 8s
+    max-intentos: 3
+    backoff-inicial: 200ms
+    backoff-multiplicador: 2.0
+    backoff-jitter: 0.5
+  clientes:
+    url: http://pedidos-cliente
+    load-balanced: true
+    timeout: 2s
+  recuperacion:
+    confirmaciones:
+      lease-ms: 120000
+      intervalo-ms: 60000
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      proveedorLogistico:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        # Una llamada lenta es la que supera el maximo documentado del proveedor (5 s).
+        slow-call-duration-threshold: 5s
+        slow-call-rate-threshold: 80
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        # Que cuenta como fallo lo decide el codigo: 5xx, 429, timeouts, errores de
+        # conexion y respuestas invalidas. Un 4xx no abre el circuito (el error es
+        # nuestro, el proveedor esta sano).
+        record-failure-predicate: com.bdo.pedidos.api.proveedor.ClasificadorFallosProveedor$CuentaParaElCircuito
+  ratelimiter:
+    instances:
+      proveedorLogistico:
+        limit-for-period: 50
+        limit-refresh-period: 1s
+        timeout-duration: 0
+  bulkhead:
+    instances:
+      proveedorLogistico:
+        max-concurrent-calls: 32
+        max-wait-duration: 0
+  # Los reintentos NO se configuran aqui: se derivan de app.proveedor.* (max-intentos,
+  # backoff-*) para que los adaptadores reactivo y bloqueante usen la misma politica.

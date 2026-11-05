@@ -1,0 +1,5 @@
+# Configuracion del servicio de CLIENTES
+app:
+  # Limite de peticiones entrantes (resiliencia hacia los clientes del servicio).
+  limite:
+    peticiones-por-segundo: 100

@@ -1,0 +1,29 @@
+# =============================================================================
+# Configuracion COMPARTIDA por todos los servicios (Spring Cloud Config, perfil native)
+# =============================================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.bdo.pedidos: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+
+# Configuracion comun de la fuente de datos (los parametros concretos por servicio
+# se redefinen en el fichero de cada servicio).
+spring:
+  r2dbc:
+    pool:
+      enabled: true
+      initial-size: 2
+      max-size: 20
+      max-idle-time: 30m

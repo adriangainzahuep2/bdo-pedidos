@@ -1,0 +1,42 @@
+server:
+  port: ${SERVER_PORT:8761}
+
+spring:
+  application:
+    name: pedidos-registry
+  main:
+    banner-mode: "off"
+
+eureka:
+  instance:
+    hostname: ${EUREKA_HOSTNAME:localhost}
+    prefer-ip-address: true
+  client:
+    # El registro no se registra a si mismo.
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+  server:
+    # En un entorno de demostracion se desactiva la autopreservacion para que los
+    # servicios caidos desaparezcan deprisa de la vista del registro.
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 5000
+    # Por defecto Eureka cachea la respuesta del registro 30 s: con ese valor, un
+    # servicio recien registrado tarda medio minuto en ser visible para los demas.
+    response-cache-update-interval-ms: 5000
+  # Consola de administracion: http://localhost:8761
+  dashboard:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    root: INFO
+    com.netflix.eureka: WARN
+    com.netflix.discovery: WARN

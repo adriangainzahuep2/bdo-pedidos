@@ -1,0 +1,42 @@
+# =============================================================================
+# Servidor de configuracion (Spring Cloud Config)
+# =============================================================================
+server:
+  port: ${SERVER_PORT:8888}
+
+spring:
+  application:
+    name: pedidos-config
+  main:
+    banner-mode: "off"
+  # Backend "native": la configuracion se sirve desde un directorio (config-repo/).
+  # Sin este perfil Spring Cloud Config usa el backend git y no arranca sin URI.
+  profiles:
+    active: ${CONFIG_PROFILE:native}
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: ${CONFIG_REPO_LOCATION:file:./config-repo}
+        # Descifra en el servidor los valores "{cipher}..." antes de servirlos.
+        encrypt:
+          enabled: true
+        # En un entorno real se usaria el backend git (perfil "git") apuntando al
+        # repositorio de configuracion en Gitea: CONFIG_PROFILE=git y
+        # spring.cloud.config.server.git.uri=<url del repositorio>.
+
+# Clave simetrica de cifrado JCE. Vive en el ENTORNO, nunca en el repositorio.
+# Sin clave, los endpoints /encrypt y /decrypt no estan disponibles.
+encrypt:
+  key: ${CONFIG_ENCRYPT_KEY:}
+
+# /encrypt y /decrypt son endpoints propios del Config Server (no de Actuator).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    root: INFO

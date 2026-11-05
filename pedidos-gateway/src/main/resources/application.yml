@@ -1,0 +1,99 @@
+# =============================================================================
+# API Gateway
+# =============================================================================
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: pedidos-gateway
+  main:
+    banner-mode: "off"
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:9000}
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/oauth2/jwks}
+
+  cloud:
+    discovery:
+      enabled: false
+    gateway:
+      # Enrutado explicito: el gateway es el unico que conoce el mapa de la arquitectura.
+      routes:
+        - id: pedidos-api
+          uri: lb://pedidos-api
+          predicates:
+            - Path=/api/pedidos/**
+          filters:
+            - StripPrefix=0
+        - id: cliente-api
+          uri: lb://pedidos-cliente
+          predicates:
+            - Path=/api/clientes/**
+          filters:
+            - StripPrefix=0
+      # Tiempo maximo de respuesta del microservicio: por encima del presupuesto global
+      # de la confirmacion (8 s) para que sea el servicio de pedidos quien responda 504.
+      httpclient:
+        connect-timeout: 2000
+        response-timeout: 15s
+      # Las rutas son SOLO las declaradas arriba. El "discovery locator" crearia una ruta
+      # automatica por cada servicio registrado (/pedidos-auth/**, /pedidos-api/actuator/**...)
+      # y expondria servicios internos a traves del gateway.
+      discovery:
+        locator:
+          enabled: false
+
+resilience4j:
+  ratelimiter:
+    instances:
+      apiGateway:
+        limit-for-period: 200
+        limit-refresh-period: 1s
+        timeout-duration: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.bdo.pedidos: INFO
+
+---
+# Perfil eureka: registro en el servidor de descubrimiento
+spring:
+  config:
+    activate:
+      on-profile: eureka
+  cloud:
+    discovery:
+      enabled: true
+    # La cache de instancias de Spring Cloud LoadBalancer dura 35 s por defecto: un servicio
+    # que se registra justo despues de una consulta seria invisible durante ese tiempo
+    # (y se responderia 503). Se alinea con el refresco del registro de Eureka.
+    loadbalancer:
+      cache:
+        ttl: 5s
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    # Refresco frecuente del registro: el gateway debe conocer al instante las
+    # instancias que se dan de alta o de baja.
+    registry-fetch-interval-seconds: 5
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}

@@ -1,0 +1,15 @@
+# Configuracion del API GATEWAY
+resilience4j:
+  ratelimiter:
+    instances:
+      apiGateway:
+        limit-for-period: 200
+        limit-refresh-period: 1s
+        timeout-duration: 0
+
+spring:
+  cloud:
+    gateway:
+      httpclient:
+        connect-timeout: 2000
+        response-timeout: 15s

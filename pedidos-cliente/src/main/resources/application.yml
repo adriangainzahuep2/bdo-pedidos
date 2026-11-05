@@ -1,0 +1,83 @@
+# Servicio de clientes - configuracion por defecto (entorno local / tests)
+server:
+  port: ${SERVER_PORT:8082}
+  shutdown: graceful
+
+spring:
+  application:
+    name: pedidos-cliente
+  main:
+    banner-mode: "off"
+  r2dbc:
+    url: "r2dbc:h2:mem:///clientes?options=DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE"
+    username: sa
+    password: ""
+    pool:
+      enabled: true
+      initial-size: 2
+      max-size: 10
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      platform: h2
+      encoding: UTF-8
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:9000}
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/oauth2/jwks}
+  cloud:
+    discovery:
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.bdo.pedidos: INFO
+
+---
+# Perfil postgres: base de datos de produccion
+spring:
+  config:
+    activate:
+      on-profile: postgres
+  r2dbc:
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5432/clientes}
+    username: ${SPRING_R2DBC_USERNAME:clientes}
+    password: ${SPRING_R2DBC_PASSWORD:clientes}
+  sql:
+    init:
+      mode: never
+      platform: postgresql
+
+---
+# Perfil eureka: registro en el servidor de descubrimiento
+spring:
+  config:
+    activate:
+      on-profile: eureka
+  cloud:
+    discovery:
+      enabled: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}

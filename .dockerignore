@@ -1,0 +1,15 @@
+# Ficheros excluidos del contexto de construccion de la imagen Docker.
+target/
+.git/
+.idea/
+*.iml
+logs/
+*.log
+.env
+.env.*
+docs/
+documentacion/
+build/
+.gradle/
+**/build/
+tasks/

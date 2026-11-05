@@ -1,0 +1,48 @@
+# --- Java / Gradle -----------------------------------------------------------
+build/
+.gradle/
+
+# Los JAR de compilacion no se versionan, EXCEPTO el del wrapper de Gradle:
+# sin el, el proyecto no se puede construir en una maquina nueva.
+*.jar
+*.war
+*.class
+!gradle/wrapper/gradle-wrapper.jar
+
+# --- IDE --------------------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+nbproject/
+
+# --- Sistema operativo ------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# --- Secretos ---------------------------------------------------------------
+# Los secretos NUNCA se versionan: viven en el entorno, en un gestor de secretos
+# o cifrados en el servidor de configuracion.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!src/test/resources/**/*.pem
+secrets/
+**/application-local.yml
+**/application-local.properties
+
+# --- Logs y resultados ------------------------------------------------------
+*.log
+logs/
+surefire-reports/
+failsafe-reports/
+.e2e/
+
+# --- Documentacion recibida de BDO (no se publica) -----------------------------
+tasks/

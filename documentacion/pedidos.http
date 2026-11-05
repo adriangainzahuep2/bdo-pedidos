@@ -1,0 +1,96 @@
+### Pedidos - peticiones HTTP de ejemplo (IntelliJ HTTP Client / VS Code REST Client)
+#
+# Variables: ajustar antes de ejecutar.
+#   credenciales = base64 de "pedidos-gateway:<AUTH_CLIENT_SECRET_GATEWAY>"
+#                  (echo -n 'pedidos-gateway:el-secreto' | base64)
+#   token        = access_token de la respuesta de la primera peticion
+@host = http://localhost:8080
+@credenciales = cGVkaWRvcy1nYXRld2F5OmVsLXNlY3JldG8=
+@token = PEGAR_AQUI_EL_ACCESS_TOKEN
+@clienteId = 1
+@pedidoId = 1
+
+### Token OAuth2 (client_credentials) emitido por el servidor de autorizacion
+POST http://localhost:9000/oauth2/token
+Authorization: Basic {{credenciales}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&scope=pedidos.read pedidos.write clientes.read clientes.write
+
+### Crear un cliente (servicio de clientes)
+POST {{host}}/api/clientes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nombre": "Empresa Demo S.L.",
+  "email": "demo@bdo-es.example"
+}
+
+### Crear un pedido (el importe lo calcula el servidor)
+POST {{host}}/api/pedidos
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "clienteId": {{clienteId}},
+  "codigoPostalDestino": "43840",
+  "lineas": [
+    {
+      "producto": "Teclado mecanico",
+      "cantidad": 2,
+      "precioUnitario": 45.9900,
+      "pesoUnitarioKg": 0.800
+    },
+    {
+      "producto": "Raton inalambrico",
+      "cantidad": 1,
+      "precioUnitario": 19.5000,
+      "pesoUnitarioKg": 0.100
+    }
+  ]
+}
+
+### Consultar un pedido
+GET {{host}}/api/pedidos/{{pedidoId}}
+Authorization: Bearer {{token}}
+
+### Confirmar un pedido (llama al proveedor logistico)
+POST {{host}}/api/pedidos/{{pedidoId}}/confirmacion
+Authorization: Bearer {{token}}
+
+### Confirmar de nuevo (idempotente: no vuelve a llamar al proveedor)
+POST {{host}}/api/pedidos/{{pedidoId}}/confirmacion
+Authorization: Bearer {{token}}
+
+### Cancelar un pedido pendiente
+POST {{host}}/api/pedidos/{{pedidoId}}/cancelacion
+Authorization: Bearer {{token}}
+
+### Peticion invalida (cantidad 0) -> 400 con el detalle de los errores
+POST {{host}}/api/pedidos
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "clienteId": {{clienteId}},
+  "codigoPostalDestino": "43840",
+  "lineas": [
+    {
+      "producto": "Teclado",
+      "cantidad": 0,
+      "precioUnitario": 45.99,
+      "pesoUnitarioKg": 0.8
+    }
+  ]
+}
+
+### Sin token -> 401
+GET {{host}}/api/pedidos/{{pedidoId}}
+
+### Salud del gateway
+GET {{host}}/actuator/health
+
+### Registro de Eureka (instancias registradas)
+GET http://localhost:8761/eureka/apps
+Accept: application/json

@@ -1,0 +1,194 @@
+# =============================================================================
+# Stack completo de la prueba tecnica (microservicios + PostgreSQL).
+#
+#   docker compose up --build
+#
+# Los secretos NO estan en este fichero: se inyectan por variable de entorno
+# (ver .env.example). Ningun valor sensible tiene valor por defecto: si falta,
+# el servicio que lo necesita no arranca.
+# =============================================================================
+
+name: bdo-pedidos
+
+x-common: &common
+  restart: unless-stopped
+  networks: [bdo]
+  environment: &common-env
+    SPRING_PROFILES_ACTIVE: eureka
+    EUREKA_URL: http://pedidos-registry:8761/eureka/
+    AUTH_ISSUER: http://pedidos-auth:9000
+    AUTH_ISSUER_URI: http://pedidos-auth:9000
+    AUTH_JWKS_URI: http://pedidos-auth:9000/oauth2/jwks
+
+services:
+
+  # --- Infraestructura ------------------------------------------------------
+  pedidos-registry:
+    build:
+      context: .
+      args:
+        MODULO: pedidos-registry
+    image: bdo/pedidos-registry:1.0.0
+    <<: *common
+    environment:
+      <<: *common-env
+      SERVER_PORT: 8761
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8761 && printf 'GET /actuator/health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  pedidos-config:
+    build:
+      context: .
+      args:
+        MODULO: pedidos-config
+    image: bdo/pedidos-config:1.0.0
+    <<: *common
+    environment:
+      <<: *common-env
+      SERVER_PORT: 8888
+      # Backend "native" (directorio montado). Sin este perfil Spring Cloud Config usa
+      # el backend git por defecto y no arranca al no tener URI.
+      SPRING_PROFILES_ACTIVE: native
+      CONFIG_REPO_LOCATION: file:///config-repo
+      # Clave simetrica de cifrado JCE. En un entorno real sale de un
+      # KMS/Vault, no de un fichero de variables.
+      CONFIG_ENCRYPT_KEY: ${CONFIG_ENCRYPT_KEY:-}
+    volumes:
+      - ./config-repo:/config-repo:ro
+    ports:
+      - "8888:8888"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [bdo]
+    environment:
+      POSTGRES_USER: pedidos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pedidos}
+      POSTGRES_DB: pedidos
+    volumes:
+      - postgres-pedidos:/var/lib/postgresql/data
+      # Cada microservicio tiene su propia base de datos. El script de inicializacion
+      # (solo se ejecuta con el volumen vacio) aplica el DDL de pedidos en "pedidos",
+      # crea la base "clientes" y aplica alli el DDL de clientes. El DDL es el mismo
+      # que se usa con H2 en modo PostgreSQL.
+      - ./scripts/postgres-init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+      - ./pedidos-api/src/main/resources/db/schema.sql:/esquemas/pedidos.sql:ro
+      - ./pedidos-cliente/src/main/resources/db/schema.sql:/esquemas/clientes.sql:ro
+    ports:
+      # Puerto 55432 en la maquina: no choca con un PostgreSQL local en 5432.
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pedidos -d pedidos"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # --- Seguridad ------------------------------------------------------------
+  pedidos-auth:
+    build:
+      context: .
+      args:
+        MODULO: pedidos-auth
+    image: bdo/pedidos-auth:1.0.0
+    <<: *common
+    environment:
+      <<: *common-env
+      SERVER_PORT: 9000
+      AUTH_CLIENT_SECRET_GATEWAY: ${AUTH_CLIENT_SECRET_GATEWAY:-}
+      AUTH_USUARIO_PASSWORD: ${AUTH_USUARIO_PASSWORD:-}
+      AUTH_UI_REDIRECT_URI: ${AUTH_UI_REDIRECT_URI:-http://localhost:8080/callback}
+    depends_on:
+      pedidos-registry:
+        condition: service_healthy
+    ports:
+      - "9000:9000"
+
+  # --- Servicios de negocio --------------------------------------------------
+  pedidos-cliente:
+    build:
+      context: .
+      args:
+        MODULO: pedidos-cliente
+    image: bdo/pedidos-cliente:1.0.0
+    <<: *common
+    environment:
+      <<: *common-env
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: eureka,postgres
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/clientes
+      SPRING_R2DBC_USERNAME: pedidos
+      SPRING_R2DBC_PASSWORD: ${POSTGRES_PASSWORD:-pedidos}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8082:8080"
+
+  pedidos-api:
+    build:
+      context: .
+      args:
+        MODULO: pedidos-api
+    image: bdo/pedidos-api:1.0.0
+    <<: *common
+    environment:
+      <<: *common-env
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: eureka,postgres
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/pedidos
+      SPRING_R2DBC_USERNAME: pedidos
+      SPRING_R2DBC_PASSWORD: ${POSTGRES_PASSWORD:-pedidos}
+      # Token del proveedor logistico: llega por el ENTORNO, nunca en el codigo.
+      PROVEEDOR_LOGISTICO_TOKEN: ${PROVEEDOR_LOGISTICO_TOKEN:-}
+      PROVEEDOR_LOGISTICO_URL: http://proveedor-logistico:8090/api/tarifas
+    depends_on:
+      postgres:
+        condition: service_healthy
+      proveedor-logistico:
+        condition: service_started
+    ports:
+      - "8081:8080"
+
+  pedidos-gateway:
+    build:
+      context: .
+      args:
+        MODULO: pedidos-gateway
+    image: bdo/pedidos-gateway:1.0.0
+    <<: *common
+    environment:
+      <<: *common-env
+      SERVER_PORT: 8080
+    depends_on:
+      pedidos-registry:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  # --- Proveedor logistico simulado (sustituye al proveedor real) ------------
+  proveedor-logistico:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    networks: [bdo]
+    working_dir: /app
+    volumes:
+      - ./scripts/mock-proveedor.py:/app/mock-proveedor.py:ro
+    environment:
+      PROVEEDOR_LOGISTICO_TOKEN: ${PROVEEDOR_LOGISTICO_TOKEN:-}
+    # El simulador exige el mismo token que envia el servicio de pedidos.
+    command: ["sh", "-c", "exec python3 /app/mock-proveedor.py --puerto 8090 --token \"$$PROVEEDOR_LOGISTICO_TOKEN\""]
+    ports:
+      - "8090:8090"
+
+networks:
+  bdo:
+    driver: bridge
+
+volumes:
+  postgres-pedidos:

@@ -7,6 +7,9 @@ líneas y, al confirmarlos, obtiene el **coste de envío** de un proveedor logí
 (hasta 5 s), con **503 intermitentes** y que exige un **token**. El foco está en lo que pide el
 enunciado: resiliencia ante el proveedor, concurrencia y calidad de los tests.
 
+> La arquitectura paso a paso, con diagramas de servicios, clases, entidades, estados y
+> secuencias, y el catálogo de clases y funciones, está en
+> **[docs/ARQUITECTURA.md](docs/ARQUITECTURA.md)**.
 > El detalle razonado de cada decisión (qué, por qué, qué se descartó y cómo se verifica) está en
 > **[docs/DECISIONES.md](docs/DECISIONES.md)**. La salida real de las verificaciones está en
 > **[documentacion/EVIDENCIA.md](documentacion/EVIDENCIA.md)**.
@@ -279,6 +282,6 @@ pedidos-auth/      servidor de autorización OAuth2
 pedidos-registry/  Eureka · pedidos-config/ Config Server · pedidos-testkit/ JWT para tests
 db/postgresql/     esquema PostgreSQL, datos de prueba y verificación
 scripts/           proveedor simulado, prueba de PostgreSQL, E2E, init de PostgreSQL para compose
-docs/ documentacion/  decisiones, evidencia, peticiones de ejemplo
+docs/ documentacion/  arquitectura, decisiones, evidencia, peticiones de ejemplo
 Jenkinsfile · docker-compose.yml · Dockerfile · gradle/libs.versions.toml (versiones)
 ```

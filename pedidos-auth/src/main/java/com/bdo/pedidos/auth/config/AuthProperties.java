@@ -42,6 +42,10 @@ public class AuthProperties {
     /** Clientes registrados. */
     private List<Cliente> clientes = new ArrayList<>();
 
+    /** Origenes del navegador autorizados a llamar a /oauth2/token (CORS): la consola web. */
+    @NotEmpty
+    private List<String> origenesCors = new ArrayList<>(List.of("http://localhost:8080"));
+
     /** Cliente OAuth2. */
     public static class Cliente {
 
@@ -155,6 +159,14 @@ public class AuthProperties {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public List<String> getOrigenesCors() {
+        return origenesCors;
+    }
+
+    public void setOrigenesCors(List<String> origenesCors) {
+        this.origenesCors = origenesCors;
     }
 
     public List<Cliente> getClientes() {

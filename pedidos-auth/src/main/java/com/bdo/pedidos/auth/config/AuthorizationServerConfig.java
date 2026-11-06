@@ -33,6 +33,9 @@ import org.springframework.security.oauth2.server.authorization.token.JwtEncodin
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -56,9 +59,10 @@ import java.util.UUID;
  *   <li><b>Los secretos de los clientes se guardan cifrados</b> (delegating password
  *       encoder) y llegan del entorno, nunca del codigo.</li>
  *   <li>Dos tipos de cliente: {@code client_credentials} para los servicios (el API Gateway,
- *       scripts) y {@code authorization_code} + PKCE para las aplicaciones web (consola
- *       HTML). Un navegador jamas debe usar {@code client_credentials}: tendria que llevar
- *       el secreto del cliente en el codigo que se descarga en el navegador.</li>
+ *       scripts) y {@code authorization_code} + PKCE para la consola web (HTML, CSS y
+ *       JavaScript servidos por el gateway). Un navegador jamas debe usar
+ *       {@code client_credentials}: tendria que llevar el secreto del cliente en el codigo
+ *       que se descarga.</li>
  * </ul>
  */
 @Configuration(proxyBeanMethods = false)
@@ -75,7 +79,28 @@ public class AuthorizationServerConfig {
                 new LoginUrlAuthenticationEntryPoint("/login"),
                 new MediaTypeRequestMatcher(MediaType.TEXT_HTML)));
         http.oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+        // La consola web canjea el codigo por el token con fetch() desde otro origen
+        // (el gateway): sin CORS el navegador bloquearia la respuesta de /oauth2/token.
+        http.cors(Customizer.withDefaults());
         return http.build();
+    }
+
+    /**
+     * CORS solo para los endpoints que usa el navegador (token y JWKS) y solo para los
+     * origenes configurados ({@code auth.origenes-cors}). El inicio de sesion no lo
+     * necesita: es una navegacion del navegador, no una peticion fetch().
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(AuthProperties properties) {
+        CorsConfiguration configuracion = new CorsConfiguration();
+        configuracion.setAllowedOrigins(List.copyOf(properties.getOrigenesCors()));
+        configuracion.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        configuracion.setAllowedHeaders(List.of("Content-Type", "Authorization"));
+        configuracion.setMaxAge(java.time.Duration.ofHours(1));
+        UrlBasedCorsConfigurationSource origen = new UrlBasedCorsConfigurationSource();
+        origen.registerCorsConfiguration("/oauth2/token", configuracion);
+        origen.registerCorsConfiguration("/oauth2/jwks", configuracion);
+        return origen;
     }
 
     /** Cadena de filtros del resto de la aplicacion: solo usuarios autenticados. */
@@ -83,7 +108,10 @@ public class AuthorizationServerConfig {
     @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
         http.authorizeHttpRequests(autorizaciones -> autorizaciones.anyRequest().authenticated())
-                .formLogin(Customizer.withDefaults());
+                .formLogin(Customizer.withDefaults())
+                // La peticion previa de CORS (OPTIONS /oauth2/token) no la atiende la cadena
+                // del servidor de autorizacion (solo POST): llega aqui y debe responderse.
+                .cors(Customizer.withDefaults());
         return http.build();
     }
 

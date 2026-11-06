@@ -38,6 +38,18 @@ RUN apt-get update \
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
 RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
 
+# Cliente de Docker (solo el CLI, el demonio es el del host): la etapa
+# "Imagenes Docker" del pipeline construye las imagenes con el socket montado.
+# Se usa el binario estatico oficial: no añade repositorios de APT ni el
+# demonio, que no hacen falta aqui.
+ARG DOCKER_VERSION=27.3.1
+RUN curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" \
+      -o /tmp/docker.tgz \
+    && tar -xzf /tmp/docker.tgz -C /tmp \
+    && mv /tmp/docker/docker /usr/local/bin/docker \
+    && rm -rf /tmp/docker /tmp/docker.tgz \
+    && docker --version
+
 # Script de arranque idempotente: crea la credencial, el servidor de SonarQube
 # y el job del pipeline. Solo hace algo la primera vez (el home es un volumen).
 COPY init.groovy.d/ /usr/share/jenkins/ref/init.groovy.d/

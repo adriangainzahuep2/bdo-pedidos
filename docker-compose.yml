@@ -51,15 +51,15 @@ services:
     environment:
       <<: *common-env
       SERVER_PORT: 8888
-      # Backend "native" (directorio montado) por defecto. Con CONFIG_PERFIL=git
+      # Backend "native" (directorio montado) por defecto. Con CONFIG_PROFILE=git
       # el Config Server lee la configuracion de un repositorio Git (Gitea) y
       # descifra los secretos con JCE ({cipher}).
-      SPRING_PROFILES_ACTIVE: ${CONFIG_PERFIL:-native}
+      SPRING_PROFILES_ACTIVE: ${CONFIG_PROFILE:-native}
       CONFIG_REPO_LOCATION: file:///config-repo
       # Clave simetrica de cifrado JCE. En un entorno real sale de un
       # KMS/Vault, no de un fichero de variables.
       CONFIG_ENCRYPT_KEY: ${CONFIG_ENCRYPT_KEY:-}
-      # Backend git: solo se usan con CONFIG_PERFIL=git.
+      # Backend git: solo se usan con CONFIG_PROFILE=git.
       SPRING_CLOUD_CONFIG_SERVER_GIT_URI: ${CONFIG_GIT_URI:-}
       SPRING_CLOUD_CONFIG_SERVER_GIT_USERNAME: ${CONFIG_GIT_USUARIO:-}
       SPRING_CLOUD_CONFIG_SERVER_GIT_PASSWORD: ${CONFIG_GIT_PASSWORD:-}

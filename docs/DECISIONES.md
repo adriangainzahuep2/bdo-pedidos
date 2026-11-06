@@ -18,6 +18,7 @@ verifica*.
 10. [Seguridad](#10-seguridad)
 11. [Operación: configuración, observabilidad y CI/CD](#11-operación-configuración-observabilidad-y-cicd)
 12. [Resumen de alternativas descartadas](#12-resumen-de-alternativas-descartadas)
+13. [Uso de IA: qué se corrigió](#13-uso-de-ia-qué-se-corrigió)
 
 ---
 
@@ -609,6 +610,59 @@ tiempo fijo.
 | Repositorios con SQL explícito | `ReactiveCrudRepository.save()` | H2 no soporta `INSERT ... RETURNING`; además el CAS necesita SQL explícito |
 | Secuencia de base de datos para los ids | `IDENTITY` | `nextval` es portable entre H2 y PostgreSQL y permite conocer el id antes de insertar |
 | Sin idempotency key | Clave de idempotencia | No lo pide el enunciado; documentado como mejora (README §6) |
+
+---
+
+## 13. Uso de IA: qué se corrigió
+
+He usado un asistente de IA (Claude) para generar código repetitivo, borradores de documentación
+y, sobre todo, **para revisar**. Las decisiones de diseño (estados, compare-and-set, qué se
+reintenta, qué abre el circuito) son mías y están razonadas en `docs/DECISIONES.md`.
+
+Correcciones sobre lo que proponía la IA en la primera versión:
+
+1. Reintentos con la firma antigua de `retryWhen`: reescrito con `Retry.from` de Reactor 3.6.
+2. H2 no admite `INSERT ... RETURNING`: repositorios con SQL explícito y secuencias.
+3. El servicio de clientes devolvía un `id` distinto de la fila insertada (consumía dos valores de
+   la secuencia): se reserva el id antes del `INSERT`.
+4. La llamada entre microservicios no propagaba el token (401): propagación por el Contexto de Reactor.
+5. El claim `scope` llega como lista desde Spring Authorization Server: conversor estándar.
+
+Una **revisión completa posterior** (también asistida por IA y verificada test a test) encontró y
+corrigió defectos que los tests de entonces no cubrían:
+
+* El circuito solo contaba excepciones de dominio, pero recibía las técnicas: **timeouts y errores
+  de conexión nunca lo abrían** y un 400 sí. Ahora cada intento traduce su fallo y un predicado
+  decide qué cuenta.
+* Con el **circuito abierto** (0 llamadas) la auditoría rechazaba "0 intentos" y el pedido se quedaba
+  en `CONFIRMANDO` respondiendo 422.
+* Un **200 sin cuerpo** dejaba el pedido en `CONFIRMANDO`; un **JSON mal formado** acababa en 500.
+* El timeout de respuesta de Netty llegaba como error de conexión: **se reintentaba un timeout**.
+* Un **404 del servicio de clientes** (con cuerpo `ProblemDetail`) acababa en 503 en lugar de 422.
+* La lectura de pedidos dejaba escapar el `Row` de R2DBC fuera de su *callback* (inseguro con el
+  driver de PostgreSQL).
+* La cancelación de la petición HTTP dejaba pedidos en `CONFIRMANDO` hasta el *lease*.
+* El gateway no reenviaba el `X-Correlation-Id` que generaba y exponía rutas automáticas a todos los
+  servicios registrados (incluido el de autorización).
+* `docker compose` no podía arrancar (Eureka en otro puerto, Config Server sin perfil `native`,
+  base de datos de clientes inexistente) y el Config Server tenía las propiedades mal anidadas.
+* El MDC se usaba como `ThreadLocal` en WebFlux; el plugin de Sonar no leía
+  `sonar-project.properties`; el README afirmaba cosas que no eran ciertas (que el enunciado pedía
+  Netflix OSS, un historial de Git que no existía).
+
+---
+
+Y en la adaptación a los requisitos de tecnología del enunciado:
+
+* El proyecto se había llevado a Java 21; el enunciado pide **Java 17**. Se compila con
+  `--release 17` (javac comprueba también que solo se usa la API de Java 17) y las imágenes usan
+  JDK/JRE 17.
+* La consola web llamaba a `/api/clientes` en el servicio de pedidos (404) y se usaba pegando un
+  token. Ahora se publica por el gateway e inicia sesión con `authorization_code` + PKCE; la
+  lógica PKCE está probada con `node --test` (vector del RFC 7636).
+* El `Jenkinsfile` empezaba con comentarios `#`, que Groovy no admite: el pipeline no compilaba.
+* El catálogo de versiones declaraba una versión (1.3.4) del starter del servidor de autorización
+  que no correspondía a ningún artefacto; la gestiona el BOM de Spring Boot.
 
 ---
 

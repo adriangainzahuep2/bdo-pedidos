@@ -1,6 +1,7 @@
 # Evidencia de verificación
 
-Salida real de las verificaciones, ejecutadas con **JDK 21** (OpenJDK 21.0.12) y PostgreSQL 16.
+Salida real de las verificaciones, ejecutadas con **JDK 21** como JVM de ejecución (el código
+compila con `--release 17`, que es la versión que exige el enunciado) y PostgreSQL 16.
 Todo es reproducible con los comandos de cada apartado.
 
 ---
@@ -13,7 +14,7 @@ Todo es reproducible con los comandos de cada apartado.
 
 ```
 BUILD SUCCESSFUL
-125 tests, 0 fallos, 0 errores, 0 omitidos
+134 tests, 0 fallos, 0 errores, 0 omitidos
 ```
 
 | Módulo | Suite | Tests | Fallos | Omitidos |
@@ -38,8 +39,9 @@ BUILD SUCCESSFUL
 | `pedidos-api` | API de pedidos - adaptador bloqueante (RestTemplate) | 2 | 0 | 0 |
 | `pedidos-api` | API de pedidos - flujo completo con proveedor simulado | 17 | 0 | 0 |
 | `pedidos-api` | API de pedidos - timeout del proveedor | 1 | 0 | 0 |
+| `pedidos-auth` | AuthorizationServerIntegrationTest - authorization_code + PKCE del cliente publico | 8 | 0 | 0 |
 | `pedidos-cliente` | API de clientes - alta, consulta y control de acceso | 6 | 0 | 0 |
-| `pedidos-gateway` | API Gateway - autenticacion, correlacion y enrutado | 5 | 0 | 0 |
+| `pedidos-gateway` | API Gateway - autenticacion, correlacion, enrutado y consola web | 6 | 0 | 0 |
 | `pedidos-gateway` | API Gateway - limite de peticiones | 1 | 0 | 0 |
 
 Los tests que pide el enunciado:
@@ -60,6 +62,35 @@ Los tests que pide el enunciado:
 
 Informes: `pedidos-*/build/reports/jacoco/test/jacoco.xml` (el que consume Sonar) y
 `pedidos-*/build/reports/jacoco/test/html/`.
+
+### Tests de JavaScript de la consola web
+
+```bash
+./gradlew :pedidos-api:testJavaScript
+```
+
+La lógica PKCE (`static/pkce.js`) se prueba con `node --test` contra el vector del RFC 7636
+(verificador conocido, reto `S256` y su `code_challenge` esperado). La tarea se salta si Node.js no
+está en el `PATH`, para que el build de Java no dependa de Node.
+
+---
+
+## 1 bis. Extremo a extremo: la consola web
+
+El E2E levanta el stack completo y comprueba la consola **a través del gateway**:
+
+```
+[ OK ] Compilacion correcta
+[ OK ] La consola se sirve sin token en http://localhost:8080/ (index.html, app.js, pkce.js, styles.css)
+[ OK ] Tras el login, /oauth2/authorize devuelve un codigo a la consola
+[ OK ] El codigo se canjea con el verificador PKCE, sin secreto y con CORS para la consola
+[ OK ] Con el token del usuario la consola consulta pedidos a traves del gateway
+========== VERIFICACION DE EXTREMO A EXTREMO CORRECTA ==========
+```
+
+Es el mismo flujo que hace el navegador (formulario de login con CSRF, `authorization_code` con
+desafío `S256` y canje del código con el verificador desde el origen de la consola), ejecutado por
+script: si el `app.js` y el servidor dejaran de estar de acuerdo, el E2E falla.
 
 ---
 
@@ -126,10 +157,10 @@ comprueba los flujos **a través del API Gateway** con un token OAuth2 real.
 
 ```
 [ OK ] Compilacion correcta
-[ OK ] PostgreSQL real arrancado en el puerto 48963 (bases 'pedidos' y 'clientes' con su DDL)
-[ OK ] servidor de autorizacion responde en http://localhost:9000/actuator/health (en 8 s)
+[ OK ] Bases de datos H2 en memoria (E2E_BD=postgres para usar PostgreSQL)
+[ OK ] servidor de autorizacion responde en http://localhost:9000/actuator/health (en 10 s)
 [ OK ] registro de servicios responde en http://localhost:8761/actuator/health (en 2 s)
-[ OK ] microservicio de clientes responde en http://localhost:8082/actuator/health (en 18 s)
+[ OK ] microservicio de clientes responde en http://localhost:8082/actuator/health (en 13 s)
 [ OK ] microservicio de pedidos responde en http://localhost:8081/actuator/health (en 1 s)
 [ OK ] API Gateway responde en http://localhost:8080/actuator/health (en 0 s)
 [ OK ] El servicio PEDIDOS-API esta registrado en Eureka
@@ -149,11 +180,16 @@ comprueba los flujos **a través del API Gateway** con un token OAuth2 real.
 [ OK ] El pedido queda CONFIRMADO con un unico coste de envio (8.45)
 [ OK ] El proveedor devuelve 503 y la API responde 502
 [ OK ] El pedido sigue en PENDIENTE (reintentable)
+[ OK ] La consola se sirve sin token en http://localhost:8080/ (index.html, app.js, pkce.js, styles.css)
+[ OK ] Tras el login, /oauth2/authorize devuelve un codigo a la consola
+[ OK ] El codigo se canjea con el verificador PKCE, sin secreto y con CORS para la consola
+[ OK ] Con el token del usuario la consola consulta pedidos a traves del gateway
 ========== VERIFICACION DE EXTREMO A EXTREMO CORRECTA ==========
 ```
 
-La misma verificación sobre H2 (`./scripts/verificar-e2e.sh`) da el mismo resultado:
-24 comprobaciones correctas y 0 fallidas.
+La misma verificación sobre H2 (`./scripts/verificar-e2e.sh`) y sobre PostgreSQL
+(`E2E_BD=postgres ./scripts/verificar-e2e.sh`) da el mismo resultado: **26 comprobaciones
+correctas y 0 fallidas**.
 
 ---
 

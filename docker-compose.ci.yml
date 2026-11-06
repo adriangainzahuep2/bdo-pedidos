@@ -100,7 +100,7 @@ services:
       # arranque (init.groovy.d).
       JAVA_OPTS: "-Djenkins.install.runSetupWizard=false"
       # Jenkins se anuncia al resto del stack con esta URL. El webhook de
-      # SonarQube apunta aqui (http://jenkins:8080/sonar-webhook/), no a la
+      # SonarQube apunta aqui (http://jenkins:8080/sonarqube-webhook/), no a la
       # URL publica del host: SonarQube debe poder alcanzarlo por la red.
       JENKINS_URL: "http://jenkins:8080"
       # Token de SonarQube (lo crea scripts/verificar-ci.sh en el servidor).

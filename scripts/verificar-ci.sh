@@ -79,6 +79,17 @@ ID_SONAR=$("${COMPOSE[@]}" ps -q sonarqube)
     http://localhost:9001/_cluster/settings' >/dev/null 2>&1 \
   && ok "Umbral de disco de Elasticsearch desactivado" \
   || log "No se pudo cambiar el ajuste (sigue con el valor por defecto)"
+
+# El monitor de disco de Elasticsearch deja los indices en solo lectura
+# (read-only-allow-delete) cuando el disco se pasa del 95 %. Desactivar el
+# ajuste evita que se vuelva a aplicar, pero los que ya tiene puesta siguen
+# bloqueando el analisis: hay que quitarles el bloque.
+"${COMPOSE[@]}" exec -T sonarqube sh -c \
+  'wget -qO- --header="Content-Type: application/json" --method=PUT \
+    --body-data="{\"index.blocks.read_only_allow_delete\":null}" \
+    "http://localhost:9001/*/_settings?expand_wildcards=all&allow_no_indices=true"' >/dev/null 2>&1 \
+  && ok "Bloqueo de solo lectura retirado de los indices" \
+  || log "No se pudieron quitar los bloqueos de los indices"
 [ -n "$ID_SONAR" ] || true
 
 # ---------------------------------------------------------------------------
@@ -151,9 +162,9 @@ log "Registrando el webhook de SonarQube hacia Jenkins..."
 HTTP_HOOK=$(curl -s -o /dev/null -w '%{http_code}' -u "${ADMIN_SONAR}:${CONTRASENA_SONAR}" \
   -X POST "${SONAR_PUBLICO}/api/webhooks/create" \
   --data-urlencode "name=jenkins" \
-  --data-urlencode "url=http://jenkins:8080/sonar-webhook/")
+  --data-urlencode "url=http://jenkins:8080/sonarqube-webhook/")
 if [ "$HTTP_HOOK" = "200" ] || [ "$HTTP_HOOK" = "201" ]; then
-  ok "Webhook creado: http://jenkins:8080/sonar-webhook/ (HTTP ${HTTP_HOOK})"
+  ok "Webhook creado: http://jenkins:8080/sonarqube-webhook/ (HTTP ${HTTP_HOOK})"
 else
   log "No se pudo crear el webhook (HTTP ${HTTP_HOOK}); se continua."
 fi

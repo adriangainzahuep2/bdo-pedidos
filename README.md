@@ -467,7 +467,7 @@ El script hace todo el Bootstrap:
 1. Levanta SonarQube y Gitea y espera a que estén sanos.
 2. Crea en Gitea el usuario `bdo` y el repositorio `config-repo`, y sube el contenido de
    `config-repo/` (la configuración compartida y la de cada servicio).
-3. Crea en SonarQube el token de API y el **webhook** hacia Jenkins (`http://jenkins:8080/sonar-webhook/`).
+3. Crea en SonarQube el token de API y el **webhook** hacia Jenkins (`http://jenkins:8080/sonarqube-webhook/`).
 4. Levanta Jenkins: su script de arranque (`docker/ci/jenkins/init.groovy.d/`) deja creados el
    job, las dos credenciales y el servidor de SonarQube.
 5. Lanza el pipeline y sigue el log hasta el resultado.

@@ -234,6 +234,7 @@ bdo-pedidos-proveedor-logistico-1   python:3.12-alpine           proveedor-logis
 | Eureka registra los tres servicios de negocio (`PEDIDOS-API`, `PEDIDOS-CLIENTE`, `PEDIDOS-GATEWAY`) | correcto |
 | La consola web se sirve por el gateway (`index.html` y `app.js`, HTTP 200) | correcto |
 | `GET /actuator/health` responde `UP` en los seis servicios | correcto |
+| El login de la consola (`demo` + contraseña del `.env`) funciona contra el stack | correcto |
 
 ### Flujo completo contra el stack
 
@@ -258,6 +259,24 @@ simulado. En PostgreSQL:
 ----+-----------+-------------+---------------
   1 | CONFIRMADO|        8.39 |       100.37
 ```
+
+### El login de la consola contra el stack
+
+El mismo flujo que hace el navegador (`app.js`): formulario de login con CSRF contra el servidor
+de autorización, `/oauth2/authorize` con el desafío S256 y canje del código con el verificador
+desde el origen de la consola. Con el usuario `demo` y la contraseña de `AUTH_USUARIO_PASSWORD` del
+`.env`:
+
+```
+1. CSRF del formulario de login: 96 caracteres
+2. /oauth2/authorize devuelve codigo a la consola: 128 caracteres
+3. token del usuario: 807 caracteres
+   Access-Control-Allow-Origin: http://localhost:8080
+4. GET /api/pedidos/1 a traves del gateway -> HTTP 200
+```
+
+Es decir: el mismo camino que recorre una persona en <http://localhost:8080/>, verificado contra
+los contenedores y no solo en local.
 
 ### Resiliencia: proveedor caído y reintento
 
@@ -305,6 +324,36 @@ Y la tabla de auditoría deja el rastro completo: tres intentos fallidos y un ac
 
 > El arranque de los mismos servicios **también** está verificado por otra vía: el E2E levanta el
 > stack real en local (`scripts/verificar-e2e.sh`), con el proveedor simulado y el gateway delante.
+
+---
+
+## 4 bis. CI/CD (Jenkins, SonarQube, Gitea)
+
+| Qué | Estado |
+|---|---|
+| Las etapas del pipeline son comandos del repositorio | **verificado**: cada una se ha ejecutado a mano y en verde |
+| `Jenkinsfile` (pipeline declarativo, 10 etapas) | **declarado**, no ejecutado en un Jenkins real |
+| Configuración de Sonar en `build.gradle.kts` + cobertura JaCoCo | **declarado**, no ejecutado contra un SonarQube real |
+| Config Server con backend de Gitea (`CONFIG_PROFILE=git`) | **declarado**, no ejecutado contra un Gitea real |
+
+Comandos de las etapas, ejecutados y en verde en esta máquina:
+
+```bash
+./gradlew clean build -x test                    # etapa Build
+./scripts/probar-postgresql.sh                  # etapa Esquema PostgreSQL
+./gradlew test :pedidos-api:testJavaScript      # etapa Tests (Java + node --test)
+./gradlew jacocoTestReport                      # etapa Cobertura
+docker build --build-arg MODULO=pedidos-api --build-arg VERSION=1.0.0 -t bdo/pedidos-api:1.0.0 .   # etapa Imagenes Docker
+./scripts/verificar-e2e.sh                      # etapa Extremo a extremo
+```
+
+**Lo que no está verificado, con todas las letras**: no hay una instancia de Jenkins, SonarQube ni
+Gitea levantada en la máquina donde se preparó esta entrega, así que las etapas que dependen de
+ellos —`withSonarQubeEnv('SonarQube')` + `./gradlew sonar` y el `waitForQualityGate`— **no se han
+podido ejecutar**. Lo que hay es la declaración completa del pipeline y la comprobación manual de
+cada comando por separado. Ponerlo en marcha requiere un agente Jenkins con Docker y Node.js, un
+servidor SonarQube con el *webhook* hacia Jenkins y, si se quiere llevar la configuración a Gitea,
+un repositorio con `config-repo/` y la clave `CONFIG_ENCRYPT_KEY`.
 
 ---
 

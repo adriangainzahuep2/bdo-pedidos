@@ -16,14 +16,29 @@ spring:
   cloud:
     config:
       server:
-        native:
-          search-locations: ${CONFIG_REPO_LOCATION:file:./config-repo}
         # Descifra en el servidor los valores "{cipher}..." antes de servirlos.
         encrypt:
           enabled: true
-        # En un entorno real se usaria el backend git (perfil "git") apuntando al
-        # repositorio de configuracion en Gitea: CONFIG_PROFILE=git y
-        # spring.cloud.config.server.git.uri=<url del repositorio>.
+        # Backend git (Gitea): solo se usa con el perfil "git".
+        git:
+          uri: ${CONFIG_GIT_URI:}
+          username: ${CONFIG_GIT_USUARIO:}
+          password: ${CONFIG_GIT_PASSWORD:}
+          default-label: ${CONFIG_GIT_RAMA:main}
+
+# El backend "native" (directorio montado) SOLO se activa con su perfil: si se
+# declara search-locations sin perfil, Spring Cloud Config usa ese repositorio
+# siempre y el backend git no llega a activarse.
+---
+spring:
+  config:
+    activate:
+      on-profile: native
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: ${CONFIG_REPO_LOCATION:file:./config-repo}
 
 # Clave simetrica de cifrado JCE. Vive en el ENTORNO, nunca en el repositorio.
 # Sin clave, los endpoints /encrypt y /decrypt no estan disponibles.

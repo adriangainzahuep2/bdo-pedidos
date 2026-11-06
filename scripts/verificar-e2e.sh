@@ -361,6 +361,55 @@ ESTADO3=$(curl -s "http://localhost:$PUERTO_GATEWAY/api/pedidos/$ID_PEDIDO3" -H 
 [ "$ESTADO3" = "PENDIENTE" ] && ok "El pedido sigue en PENDIENTE (reintentable)" \
   || fallo "Se esperaba PENDIENTE y se obtuvo $ESTADO3"
 
+log "Comprobacion 8: la consola web (HTML, CSS y JavaScript) se sirve a traves del gateway"
+HTML_CONSOLA=$(curl -s http://localhost:$PUERTO_GATEWAY/)
+CODIGOS_ESTATICOS=""
+for fichero in index.html app.js pkce.js styles.css; do
+  CODIGOS_ESTATICOS="$CODIGOS_ESTATICOS$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$PUERTO_GATEWAY/$fichero") "
+done
+if echo "$HTML_CONSOLA" | grep -q "Consola de pedidos" && [ "$CODIGOS_ESTATICOS" = "200 200 200 200 " ]; then
+  ok "La consola se sirve sin token en http://localhost:$PUERTO_GATEWAY/ (index.html, app.js, pkce.js, styles.css)"
+else
+  fallo "La consola no se sirve por el gateway (codigos: $CODIGOS_ESTATICOS)"
+fi
+
+log "Comprobacion 9: inicio de sesion de la consola (authorization_code + PKCE, como hace app.js)"
+# Mismo flujo que el navegador: formulario de login (con CSRF), /oauth2/authorize con el
+# desafio S256, y canje del codigo con el verificador desde el origen de la consola (CORS).
+COOKIES="$LOG_DIR/cookies-auth.txt"; rm -f "$COOKIES"
+VERIFICADOR="dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+DESAFIO="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+REDIRECCION="http://localhost:$PUERTO_GATEWAY/index.html"
+CSRF=$(curl -s -c "$COOKIES" http://localhost:$PUERTO_AUTH/login | sed -n 's/.*name="_csrf"[^>]*value="\([^"]*\)".*/\1/p' | head -1)
+curl -s -o /dev/null -b "$COOKIES" -c "$COOKIES" -X POST http://localhost:$PUERTO_AUTH/login \
+  --data-urlencode "username=demo" --data-urlencode "password=$PASSWORD_USUARIO" --data-urlencode "_csrf=$CSRF"
+URL_AUTORIZACION="http://localhost:$PUERTO_AUTH/oauth2/authorize?response_type=code&client_id=consola-web"
+URL_AUTORIZACION="$URL_AUTORIZACION&redirect_uri=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$REDIRECCION")"
+URL_AUTORIZACION="$URL_AUTORIZACION&scope=pedidos.read+pedidos.write+clientes.read+clientes.write&state=e2e"
+URL_AUTORIZACION="$URL_AUTORIZACION&code_challenge=$DESAFIO&code_challenge_method=S256"
+VUELTA=$(curl -s -o /dev/null -b "$COOKIES" -w "%{redirect_url}" "$URL_AUTORIZACION")
+CODIGO_AUTORIZACION=$(python3 -c "import urllib.parse,sys;q=urllib.parse.urlparse(sys.argv[1]).query;print(urllib.parse.parse_qs(q).get('code',[''])[0])" "$VUELTA")
+if [ -n "$CODIGO_AUTORIZACION" ] && [ "${VUELTA%%\?*}" = "$REDIRECCION" ]; then
+  ok "Tras el login, /oauth2/authorize devuelve un codigo a la consola"
+else
+  fallo "No se obtuvo el codigo de autorizacion (vuelta: $VUELTA)"
+fi
+RESPUESTA_CANJE=$(curl -s -D "$LOG_DIR/cabeceras-canje.txt" -X POST http://localhost:$PUERTO_AUTH/oauth2/token \
+  -H "Origin: http://localhost:$PUERTO_GATEWAY" \
+  --data-urlencode "grant_type=authorization_code" --data-urlencode "code=$CODIGO_AUTORIZACION" \
+  --data-urlencode "redirect_uri=$REDIRECCION" --data-urlencode "client_id=consola-web" \
+  --data-urlencode "code_verifier=$VERIFICADOR")
+TOKEN_USUARIO=$(echo "$RESPUESTA_CANJE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+if [ -n "$TOKEN_USUARIO" ] && grep -qi "^access-control-allow-origin: http://localhost:$PUERTO_GATEWAY" "$LOG_DIR/cabeceras-canje.txt"; then
+  ok "El codigo se canjea con el verificador PKCE, sin secreto y con CORS para la consola"
+else
+  fallo "El canje del codigo fallo: $RESPUESTA_CANJE"
+fi
+CODIGO_USUARIO=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$PUERTO_GATEWAY/api/pedidos/$ID_PEDIDO" \
+  -H "Authorization: Bearer $TOKEN_USUARIO")
+[ "$CODIGO_USUARIO" = "200" ] && ok "Con el token del usuario la consola consulta pedidos a traves del gateway" \
+  || fallo "Con el token del usuario se esperaba 200 y se obtuvo $CODIGO_USUARIO"
+
 # ---------------------------------------------------------------------------
 # 8. Resultado
 # ---------------------------------------------------------------------------

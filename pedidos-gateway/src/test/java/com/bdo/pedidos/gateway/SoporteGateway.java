@@ -33,6 +33,11 @@ final class SoporteGateway {
         registro.add("spring.cloud.gateway.routes[0].id", () -> "pedidos-api");
         registro.add("spring.cloud.gateway.routes[0].uri", () -> "http://localhost:" + microservicio.port());
         registro.add("spring.cloud.gateway.routes[0].predicates[0]", () -> "Path=/api/pedidos/**");
+        registro.add("spring.cloud.gateway.routes[1].id", () -> "consola-web");
+        registro.add("spring.cloud.gateway.routes[1].uri", () -> "http://localhost:" + microservicio.port());
+        registro.add("spring.cloud.gateway.routes[1].predicates[0]", () -> "Method=GET");
+        registro.add("spring.cloud.gateway.routes[1].predicates[1]",
+                () -> "Path=/,/index.html,/app.js,/pkce.js,/styles.css,/favicon.ico");
         registro.add("eureka.client.enabled", () -> "false");
     }
 

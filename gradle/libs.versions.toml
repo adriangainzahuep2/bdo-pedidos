@@ -6,11 +6,9 @@
 # =============================================================================
 
 [versions]
-java = "21"
+java = "17"
 springBoot = "3.3.5"
 springCloud = "2023.0.3"
-# Spring Authorization Server NO lo gestiona el BOM de Spring Boot: version propia.
-springAuthorizationServer = "1.3.4"
 resilience4j = "2.2.0"
 reactor = "2023.0.11"
 wiremock = "3.9.2"
@@ -29,7 +27,9 @@ spring-boot-starter-webflux = { module = "org.springframework.boot:spring-boot-s
 spring-boot-starter-data-r2dbc = { module = "org.springframework.boot:spring-boot-starter-data-r2dbc" }
 spring-boot-starter-security = { module = "org.springframework.boot:spring-boot-starter-security" }
 spring-boot-starter-oauth2-resource-server = { module = "org.springframework.boot:spring-boot-starter-oauth2-resource-server" }
-spring-boot-starter-oauth2-authorization-server = { module = "org.springframework.boot:spring-boot-starter-oauth2-authorization-server", version.ref = "springAuthorizationServer" }
+# Desde Spring Boot 3.1 el BOM gestiona el starter del servidor de autorizacion
+# (Spring Authorization Server 1.3.x con Boot 3.3): no lleva version propia.
+spring-boot-starter-oauth2-authorization-server = { module = "org.springframework.boot:spring-boot-starter-oauth2-authorization-server" }
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }

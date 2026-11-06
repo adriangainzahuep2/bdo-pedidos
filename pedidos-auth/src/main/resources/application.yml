@@ -22,6 +22,9 @@ auth:
     - pedidos-cliente
     - pedidos-gateway
 
+  # Origenes de la consola web autorizados a canjear el codigo por el token (CORS).
+  origenes-cors: ${AUTH_ORIGENES_CORS:http://localhost:8080}
+
   # Usuario de la consola web (flujo authorization_code + PKCE).
   usuario: ${AUTH_USUARIO:demo}
   password: ${AUTH_USUARIO_PASSWORD:}
@@ -50,7 +53,8 @@ auth:
       grant-types:
         - authorization_code
         - refresh_token
-      redirect-uri: ${AUTH_UI_REDIRECT_URI:http://localhost:8080/callback}
+      # La consola es una sola pagina: la vuelta del servidor llega a index.html.
+      redirect-uri: ${AUTH_UI_REDIRECT_URI:http://localhost:8080/index.html}
 
 management:
   endpoints:

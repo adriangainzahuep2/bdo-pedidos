@@ -1,5 +1,5 @@
 /* Consola de pedidos: HTML + CSS + JavaScript sin dependencias ni paso de build.
-   (El enunciado pide HTML, CSS y JavaScript; el backend es el foco de la prueba.) */
+   El enunciado pide HTML, CSS y JavaScript; el foco de la prueba es el backend. */
 :root {
     --azul: #0a4d8c;
     --azul-claro: #e8f0f9;
@@ -109,9 +109,52 @@ table.lineas input { width: 100%; }
     margin: 0.4rem 0 0;
 }
 
-.estado { font-size: 0.85rem; margin-left: 0.6rem; }
+.estado { font-size: 0.85rem; margin: 0.2rem 0 0.6rem; }
 .estado.ok { color: var(--verde); }
 .estado.error { color: var(--rojo); }
+
+/* Borde de color segun el resultado de la ultima llamada. */
+.salida.ok { border-left: 4px solid var(--verde); }
+.salida.error { border-left: 4px solid var(--rojo); }
+
+/* Resumen legible del pedido (estado e importes) encima del JSON completo. */
+.resumen {
+    background: var(--azul-claro);
+    border-left: 4px solid var(--azul);
+    border-radius: 4px;
+    padding: 0.5rem 0.8rem;
+    margin: 0.4rem 0 0;
+    font-size: 0.9rem;
+}
+
+details { margin-top: 0.4rem; }
+details summary { cursor: pointer; color: var(--azul); font-size: 0.88rem; }
+details[open] summary { margin-bottom: 0.4rem; }
+label.bloque { margin-bottom: 0.3rem; }
+details button { margin-top: 0.4rem; }
+
+/* La tabla de lineas se desplaza en horizontal en pantallas estrechas. */
+.tabla { overflow-x: auto; }
+table.lineas { min-width: 520px; }
+
+/* Texto solo para lectores de pantalla. */
+.oculto {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+[hidden] { display: none !important; }
+
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+
+@media (max-width: 600px) {
+    .fila { flex-direction: column; align-items: stretch; }
+    header { padding: 1rem; }
+}
 
 footer { text-align: center; color: var(--gris); font-size: 0.8rem; padding: 1.5rem 1rem 2.5rem; }
 code { background: #eef1f4; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }

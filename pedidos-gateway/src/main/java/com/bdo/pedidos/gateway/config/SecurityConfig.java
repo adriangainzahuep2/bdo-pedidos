@@ -2,6 +2,7 @@ package com.bdo.pedidos.gateway.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -24,6 +25,10 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/actuator/health/**", "/actuator/health", "/actuator/info").permitAll()
+                        // Ficheros estaticos de la consola web: no contienen datos; todas las
+                        // llamadas que hace la consola a la API llevan su token.
+                        .pathMatchers(HttpMethod.GET, "/", "/index.html", "/app.js", "/pkce.js",
+                                "/styles.css", "/favicon.ico").permitAll()
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
                 .build();

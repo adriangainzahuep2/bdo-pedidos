@@ -130,7 +130,7 @@ En `docker-compose.yml` cada servicio corre en un contenedor y PostgreSQL tiene 
 
 ## 3. Módulos del build
 
-Proyecto Gradle multi-módulo (Java 21). Las versiones viven en `gradle/libs.versions.toml`.
+Proyecto Gradle multi-módulo (Java 17). Las versiones viven en `gradle/libs.versions.toml`.
 
 ```mermaid
 flowchart LR
@@ -1285,7 +1285,7 @@ flowchart LR
 * **Jenkinsfile**: pipeline declarativo con las etapas del diagrama. El token del proveedor llega
   de una credencial de Jenkins (`bdo-proveedor-token`).
 * **Sonar**: configurado en `build.gradle.kts` (bloque `sonar`) con la cobertura de JaCoCo.
-* **Docker**: `Dockerfile` multi-etapa (JDK 21 para compilar, JRE 21 para ejecutar, usuario sin
+* **Docker**: `Dockerfile` multi-etapa (JDK 17 para compilar, JRE 17 para ejecutar, usuario sin
   privilegios, *healthcheck* sin herramientas extra). `docker-compose.yml` levanta los servicios,
   PostgreSQL (puerto 55432 en la máquina) y el proveedor simulado.
 * **Observabilidad**: Actuator (`health` con *probes*, `info`, `metrics`) y `X-Correlation-Id`

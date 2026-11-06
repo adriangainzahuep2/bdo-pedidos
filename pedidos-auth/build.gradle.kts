@@ -15,7 +15,7 @@ dependencies {
     implementation(platform(libs.spring.boot.bom))
 
     implementation(libs.spring.boot.starter.web)
-    // Spring Authorization Server no lo gestiona el BOM de Spring Boot: version propia.
+    // El BOM de Spring Boot gestiona la version (Spring Authorization Server 1.3.x).
     implementation(libs.spring.boot.starter.oauth2.authorization.server)
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.spring.boot.starter.validation)

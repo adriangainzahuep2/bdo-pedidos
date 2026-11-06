@@ -10,7 +10,7 @@
 # =============================================================================
 
 # ---- Etapa 1: compilacion --------------------------------------------------
-FROM eclipse-temurin:21-jdk-jammy AS build
+FROM eclipse-temurin:17-jdk-jammy AS build
 
 ARG MODULO=pedidos-api
 ARG VERSION=1.0.0
@@ -42,7 +42,7 @@ COPY . .
 RUN ./gradlew --console=plain :${MODULO}:bootJar -x test
 
 # ---- Etapa 2: ejecucion ----------------------------------------------------
-FROM eclipse-temurin:21-jre-jammy AS runtime
+FROM eclipse-temurin:17-jre-jammy AS runtime
 
 ARG MODULO=pedidos-api
 ARG VERSION=1.0.0

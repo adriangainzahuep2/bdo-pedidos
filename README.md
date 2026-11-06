@@ -2,7 +2,7 @@
 
 Prueba técnica **Desarrollador/a Java · Perfil Senior** (BDO España, 03/11/2026).
 
-Servicio de pedidos en **Java 21 / Spring Boot 3.3 (WebFlux + R2DBC)** que crea pedidos con sus
+Servicio de pedidos en **Java 17 / Spring Boot 3.3 (WebFlux + R2DBC)** que crea pedidos con sus
 líneas y, al confirmarlos, obtiene el **coste de envío** de un proveedor logístico externo lento
 (hasta 5 s), con **503 intermitentes** y que exige un **token**. El foco está en lo que pide el
 enunciado: resiliencia ante el proveedor, concurrencia y calidad de los tests.
@@ -22,16 +22,19 @@ enunciado: resiliencia ante el proveedor, concurrencia y calidad de los tests.
 
 ### Requisitos
 
-* **JDK 21** (el build usa *toolchain* 21; no descarga JDKs).
+* **JDK 17** (el enunciado pide Java 17). El build compila con `--release 17`, así que la API
+  usada está comprobada contra Java 17 aunque la JVM que ejecuta Gradle sea más moderna.
 * No hace falta instalar Gradle: el repositorio incluye el *wrapper* (`./gradlew`, Gradle 8.10.2).
-* Python 3 para el proveedor simulado y los scripts. PostgreSQL 13+ (binarios `initdb`/`psql`)
-  solo para las pruebas sobre PostgreSQL. Docker solo para `docker compose`.
+* Python 3 para el proveedor simulado y los scripts. Node.js 18+ para los tests de JavaScript de
+  la consola web. PostgreSQL 13+ (binarios `initdb`/`psql`) solo para las pruebas sobre
+  PostgreSQL. Docker solo para `docker compose`.
 
 ### Tests
 
 ```bash
-./gradlew build                     # compila, 125 tests (unitarios + integracion) y cobertura JaCoCo
+./gradlew build                     # compila, 134 tests (unitarios + integracion) y cobertura JaCoCo
 ./gradlew :pedidos-dominio:test     # solo el dominio (Java puro, segundos)
+./gradlew :pedidos-api:testJavaScript   # tests de JavaScript de la consola (node --test)
 ./scripts/probar-postgresql.sh      # esquema PostgreSQL + 10 filas por tabla + verificacion (PostgreSQL real)
 ./scripts/verificar-e2e.sh          # stack completo, flujos del enunciado a traves del gateway (H2)
 E2E_BD=postgres ./scripts/verificar-e2e.sh   # lo mismo sobre PostgreSQL real
@@ -82,6 +85,21 @@ curl -s -X POST http://localhost:8080/api/pedidos/1/confirmacion -H "Authorizati
 
 `documentacion/pedidos.http` tiene todas las peticiones listas para IntelliJ / VS Code. Con Docker:
 `cp .env.example .env` (rellenar) y `docker compose up --build` (PostgreSQL en el puerto 55432).
+
+> El estado exacto de la verificación de `docker compose` está en
+> **[documentacion/EVIDENCIA.md](documentacion/EVIDENCIA.md)** §4. El stack de servicios, en cambio,
+> sí está verificado en ejecución por `scripts/verificar-e2e.sh`.
+
+### La consola web
+
+Con los seis servicios en marcha, la consola está en **<http://localhost:8080/>**: el gateway la
+publica (ruta `consola-web`) y todo su tráfico pasa por él, igual que el resto de la API.
+
+* Inicia sesión con **`authorization_code` + PKCE** contra el servidor de autorización (`:9000`):
+  el navegador pide un código, la consola lo canjea por el token con el *verifier* y **no guarda
+  ningún secreto** en el cliente. La lógica PKCE vive en `static/pkce.js` y está probada contra el
+  vector del RFC 7636 (`node --test`).
+* Crear cliente, crear pedido y confirmar: los importes **no se envían**, los calcula el servidor.
 
 > **El token del proveedor nunca está en el código fuente**: llega por la variable de entorno
 > `PROVEEDOR_LOGISTICO_TOKEN`. Si falta, el servicio **no arranca** (fallo en el arranque, no un 500
@@ -228,13 +246,41 @@ mayor parte del tiempo **esperando** al proveedor.
 | **Idempotency-Key** en `POST /api/pedidos` (un reintento del cliente crea otro pedido) | Cabecera `Idempotency-Key` + tabla de claves con TTL |
 | **Migraciones versionadas** (el DDL se aplica al crear la base de datos) | Flyway con `db/postgresql/esquema.sql` como `V1` |
 | **Tests de integración Java sobre PostgreSQL** (el SQL se prueba con scripts y en el E2E) | Testcontainers en CI (requiere Docker en el agente) |
-| **Listados, paginación y frontend** (el enunciado dice que no hacen falta) | `GET /api/pedidos` con paginación por *keyset*; hay una consola estática mínima en `pedidos-api` |
+| **Listados y paginación** (el enunciado dice que no hacen falta) | `GET /api/pedidos` con paginación por *keyset* y cursor |
+| **Gestión de la consola web** (hoy es una demo de una sola página, sin paginación de pedidos ni exportación) | Extraer los pedidos a un listado con *keyset* y descarga en CSV; mover la consola a un *frontend* con framework si crece |
 | **Clave RSA persistente** del servidor de autorización y *rate limit* distribuido | KMS/Vault para la clave; `RequestRateLimiter` con Redis en el gateway |
 | **Seguridad del Config Server** (`/encrypt` sin autenticación) | Spring Security en el Config Server o no exponerlo fuera de la red interna |
+| **El repositorio de configuración en Gitea** (el Config Server lo soporta con `CONFIG_PROFILE=git`, pero hoy se sirve desde el classpath) | `spring.cloud.config.server.git.uri` apuntando al repo de Gitea, con el token como `{cipher}` |
 
 ---
 
-## 5. Uso de IA
+## 5. CI/CD
+
+`Jenkinsfile` (pipeline declarativo) con estas etapas:
+
+| Etapa | Qué hace |
+|---|---|
+| Checkout | Recupera el commit y lo registra en el log |
+| Build | `./gradlew clean build -x test` |
+| Esquema PostgreSQL | `./scripts/probar-postgresql.sh` (PostgreSQL real, desechable) |
+| Tests | `./gradlew test :pedidos-api:testJavaScript` (Java + `node --test` de la consola) |
+| Cobertura | Informe JaCoCo (el que consume Sonar) |
+| SonarQube | `./gradlew sonar` + *quality gate* (bloquea si la cobertura o las reglas no pasan) |
+| Empaquetado | JARs de los ocho módulos |
+| Imágenes Docker | Una por servicio, etiquetada con el número de build |
+| Extremo a extremo | `./scripts/verificar-e2e.sh` sobre el stack completo |
+
+* **Sonar**: configurado en `build.gradle.kts` (el plugin de Gradle **no** lee
+  `sonar-project.properties`, solo el *scanner* de línea de comandos), con la cobertura de JaCoCo.
+* **Secretos**: el token del proveedor llega de una credencial de Jenkins
+  (`bdo-proveedor-token`), nunca del repositorio.
+* **Gitea**: el *Config Server* ya admite el repositorio de configuración en Gitea
+  (`CONFIG_PROFILE=git`); el resto del pipeline es agnóstico al servidor Git, así que el mismo
+  `Jenkinsfile` vale para GitHub o Gitea cambiando el origen del *checkout*.
+
+---
+
+## 6. Uso de IA
 
 He usado un asistente de IA (Claude) para generar código repetitivo, borradores de documentación
 y, sobre todo, **para revisar**. Las decisiones de diseño (estados, compare-and-set, qué se
@@ -271,13 +317,26 @@ corrigió defectos que los tests de entonces no cubrían:
   `sonar-project.properties`; el README afirmaba cosas que no eran ciertas (que el enunciado pedía
   Netflix OSS, un historial de Git que no existía).
 
+Y en la adaptación a los requisitos de tecnología del enunciado:
+
+* El proyecto se había llevado a Java 21; el enunciado pide **Java 17**. Se compila con
+  `--release 17` (javac comprueba también que solo se usa la API de Java 17) y las imágenes usan
+  JDK/JRE 17.
+* La consola web llamaba a `/api/clientes` en el servicio de pedidos (404) y se usaba pegando un
+  token. Ahora se publica por el gateway e inicia sesión con `authorization_code` + PKCE; la
+  lógica PKCE está probada con `node --test` (vector del RFC 7636).
+* El `Jenkinsfile` empezaba con comentarios `#`, que Groovy no admite: el pipeline no compilaba.
+* El catálogo de versiones declaraba una versión (1.3.4) del starter del servidor de autorización
+  que no correspondía a ningún artefacto; la gestiona el BOM de Spring Boot.
+
 ---
 
-## 6. Estructura
+## 7. Estructura
 
 ```
 pedidos-dominio/   modelo, máquina de estados, cálculo de importes, puertos (Java puro)
 pedidos-api/       servicio de pedidos: API, aplicación, persistencia R2DBC, adaptadores del proveedor
+                   y consola web (static/: HTML, CSS, JavaScript con PKCE)
 pedidos-cliente/   servicio de clientes
 pedidos-gateway/   API Gateway (Spring Cloud Gateway)
 pedidos-auth/      servidor de autorización OAuth2

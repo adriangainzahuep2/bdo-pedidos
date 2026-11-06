@@ -102,7 +102,7 @@ services:
       SERVER_PORT: 9000
       AUTH_CLIENT_SECRET_GATEWAY: ${AUTH_CLIENT_SECRET_GATEWAY:-}
       AUTH_USUARIO_PASSWORD: ${AUTH_USUARIO_PASSWORD:-}
-      AUTH_UI_REDIRECT_URI: ${AUTH_UI_REDIRECT_URI:-http://localhost:8080/callback}
+      AUTH_UI_REDIRECT_URI: ${AUTH_UI_REDIRECT_URI:-http://localhost:8080/index.html}
     depends_on:
       pedidos-registry:
         condition: service_healthy

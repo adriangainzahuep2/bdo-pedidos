@@ -1,8 +1,13 @@
-# =============================================================================
-# Pipeline de integracion continua.
-#
-# Etapas: build -> tests -> cobertura -> calidad (Sonar) -> empaquetado -> entrega
-# =============================================================================
+// =============================================================================
+// Pipeline de integracion continua (Jenkins, pipeline declarativo).
+//
+// Etapas: checkout -> build -> esquema PostgreSQL -> tests -> cobertura -> Sonar
+//         (con quality gate) -> empaquetado -> imagenes Docker -> E2E
+//
+// Requisitos del agente: JDK 17 o posterior (se compila con --release 17), Node.js 18+
+// (tests de JavaScript), Docker, Python 3, binarios de PostgreSQL (initdb/psql) y el servidor SonarQube configurado
+// en Jenkins con el nombre "SonarQube".
+// =============================================================================
 
 pipeline {
     agent any
@@ -48,7 +53,7 @@ pipeline {
 
         stage('Tests unitarios e integracion') {
             steps {
-                sh './gradlew --console=plain test'
+                sh './gradlew --console=plain test :pedidos-api:testJavaScript'
                 junit testResults: '**/build/test-results/test/*.xml', allowEmptyResults: false
             }
         }
@@ -65,6 +70,16 @@ pipeline {
             steps {
                 withSonarQubeEnv('SonarQube') {
                     sh './gradlew --console=plain sonar'
+                }
+            }
+        }
+
+        stage('Quality gate') {
+            steps {
+                // Detiene el pipeline si el analisis no supera el quality gate. Requiere el
+                // webhook de SonarQube hacia Jenkins (<jenkins>/sonarqube-webhook/).
+                timeout(time: 10, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }

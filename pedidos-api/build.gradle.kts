@@ -45,3 +45,28 @@ dependencies {
     testImplementation(libs.spring.security.test)
     testImplementation(libs.wiremock.standalone)
 }
+
+// -----------------------------------------------------------------------------
+// Tests de JavaScript de la consola web (node --test, sin dependencias).
+// Forman parte de "check" cuando hay Node.js 18+ en el PATH; si no lo hay, la tarea se
+// omite con un aviso en lugar de romper el build de quien solo tiene Java.
+// -----------------------------------------------------------------------------
+fun nodeDisponible(): Boolean = try {
+    ProcessBuilder("node", "--version").start().waitFor() == 0
+} catch (error: java.io.IOException) {
+    false
+}
+
+val testJavaScript by tasks.registering(Exec::class) {
+    description = "Ejecuta los tests de JavaScript de la consola web con node --test"
+    group = "verification"
+    val tests = fileTree("src/test/js") { include("**/*.test.mjs") }
+    inputs.files(tests, fileTree("src/main/resources/static"))
+    workingDir = projectDir
+    commandLine(listOf("node", "--test") + tests.files.map { it.relativeTo(projectDir).path }.sorted())
+    onlyIf("Node.js disponible en el PATH") { nodeDisponible() }
+}
+
+tasks.named("check") {
+    dependsOn(testJavaScript)
+}

@@ -1,7 +1,7 @@
 // =============================================================================
 // Build raiz: configuracion comun a todos los modulos.
 //
-// Toolchain Java 21, plataforma de tests JUnit 5, codificacion, JaCoCo y
+// Java 17 (--release 17), plataforma de tests JUnit 5, codificacion, JaCoCo y
 // empaquetado.
 // =============================================================================
 
@@ -22,16 +22,18 @@ subprojects {
     apply(plugin = "java-library")
     apply(plugin = "jacoco")
 
-    // Toolchain: el proyecto se compila con Java 21 (LTS) aunque la JVM que lance
-    // Gradle sea otra (debe existir un JDK 21 instalado: no se configura descarga automatica).
+    // Java 17 (version exigida por el enunciado). Se compila con "--release 17": ademas
+    // del nivel de lenguaje, javac comprueba que solo se usa la API de Java 17, aunque la
+    // JVM que ejecuta Gradle sea mas moderna (p. ej. JDK 21). Las imagenes Docker y el CI
+    // compilan y ejecutan con JDK/JRE 17.
     extensions.configure<JavaPluginExtension> {
-        toolchain {
-            languageVersion.set(JavaLanguageVersion.of(versionJava))
-        }
+        sourceCompatibility = JavaVersion.toVersion(versionJava)
+        targetCompatibility = JavaVersion.toVersion(versionJava)
         withSourcesJar()
     }
 
     tasks.withType<JavaCompile>().configureEach {
+        options.release.set(versionJava)
         options.encoding = "UTF-8"
         options.compilerArgs.addAll(listOf("-Xlint:all,-serial,-processing", "-parameters"))
     }

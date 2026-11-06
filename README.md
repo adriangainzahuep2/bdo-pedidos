@@ -192,15 +192,83 @@ docker compose down -v     # borra también el volumen: la base se vuelve a inic
 Con los seis servicios en marcha, la consola está en **<http://localhost:8080/>**: el gateway la
 publica (ruta `consola-web`) y todo su tráfico pasa por él, igual que el resto de la API.
 
-* Inicia sesión con **`authorization_code` + PKCE** contra el servidor de autorización (`:9000`):
-  el navegador pide un código, la consola lo canjea por el token con el *verifier* y **no guarda
-  ningún secreto** en el cliente. La lógica PKCE vive en `static/pkce.js` y está probada contra el
-  vector del RFC 7636 (`node --test`).
+**Cómo levantarla y entrar**
+
+```bash
+cp .env.example .env          # si aún no lo has hecho: rellena los secretos
+docker compose up --build     # la primera vez compila las imágenes
+```
+
+Abre **<http://localhost:8080/>** e inicia sesión con:
+
+| Campo | Valor |
+|---|---|
+| Usuario | `demo` (el de `AUTH_USUARIO`, por defecto) |
+| Contraseña | la de `AUTH_USUARIO_PASSWORD` en tu `.env` |
+
+Para verla sin abrir el fichero:
+
+```bash
+grep AUTH_USUARIO_PASSWORD .env        # -> AUTH_USUARIO_PASSWORD=demo-<lo que sea>
+```
+
+La contraseña **no está en el repositorio**: la genera el despliegue y se guarda en `.env`
+(ignorado por git). El login no es un formulario con usuario y contraseña en el navegador, sino el
+flujo OAuth2 `authorization_code` + **PKCE** contra el servidor de autorización (`:9000`): el
+navegador pide un código, la consola lo canjea por el token con el *verifier* y **no guarda
+ningún secreto** en el cliente. La lógica PKCE vive en `static/pkce.js` y está probada contra el
+vector del RFC 7636 (`node --test`).
+
 * Crear cliente, crear pedido y confirmar: los importes **no se envían**, los calcula el servidor.
+* El token del proveedor tampoco está en el código: llega por `PROVEEDOR_LOGISTICO_TOKEN`.
 
 > **El token del proveedor nunca está en el código fuente**: llega por la variable de entorno
 > `PROVEEDOR_LOGISTICO_TOKEN`. Si falta, el servicio **no arranca** (fallo en el arranque, no un 500
 > en la primera confirmación). Lo mismo para los secretos de OAuth2.
+
+### Cómo encaja la arquitectura
+
+| Pieza | Puerto | Qué hace |
+|---|---|---|
+| **Gateway** (`pedidos-gateway`) | 8080 | Puerta única: valida el JWT, limita las peticiones (429), genera y propaga `X-Correlation-Id`, enruta cada ruta y publica la consola web |
+| **Servidor de autorización** (`pedidos-auth`) | 9000 | OAuth2/JWT: `client_credentials` para los servicios y `authorization_code` + PKCE para la consola. Firma con una clave RSA que publica en `/oauth2/jwks` |
+| **Registro** (`pedidos-registry`) | 8761 | Eureka: cada servicio se da de alta con su host y puerto y el resto lo descubre. Sin IP fija ni direcciones fijas en el código |
+| **Config Server** (`pedidos-config`) | 8888 | Configuración compartida y **cifrada con JCE** (`{cipher}`). Con `CONFIG_PROFILE=git` la lee de un repositorio Gitea |
+| **API de pedidos** (`pedidos-api`) | 8081 | Caso de uso: crear pedido, confirmar (consulta al proveedor, guarda el coste de envío y el total) y cancelar |
+| **API de clientes** (`pedidos-cliente`) | 8082 | Alta y consulta de clientes, con su propia base de datos |
+| **PostgreSQL** | 55432 | Una base por microservicio: `pedidos` y `clientes` |
+| **Proveedor logístico simulado** | 8090 | Sustituye al proveedor real: puede tardar 5 s, devolver 503 intermitentes y exige un token |
+
+**Eureka (descubrimiento de servicios).** No hay direcciones IP escritas en el código: cada
+servicio se registra en Eureka (`@EnableDiscoveryClient`, perfil `eureka`) y los demás lo
+consultan. El `instance-id` lleva un valor aleatorio (`pedidos-api:<uuid>`), así que pueden
+convivir varias instancias del mismo servicio. El registro se refresca cada 5 s y la caché de
+instancias del balanceador dura también 5 s: sin esa alineación, un servicio que se daba de alta
+justo después de una consulta sería invisible durante 35 s y se respondería 503.
+
+**Load balancing.** Las rutas del gateway apuntan a *service ids* (`lb://pedidos-api`,
+`lb://pedidos-cliente`) y el servicio de pedidos llama al de clientes con un `WebClient`
+anotado con `@LoadBalanced`: Spring Cloud LoadBalancer (el sustituto actual de Ribbon en el
+ecosistema Netflix OSS) traduce ese *service id* a una instancia concreta del registro. Con
+varias instancias detrás de la misma dirección, el reparto es de Round Robin. Se puede desactivar
+con `app.clientes.load-balanced=false` (tests y entornos locales).
+
+**Gateway.** Enruta solo las rutas declaradas (`/api/pedidos/**`, `/api/clientes/**` y la
+consola); el *discovery locator* está **desactivado** a propósito, porque crearía una ruta
+automática por cada servicio registrado y expondría servicios internos. Aplica un límite global
+de peticiones que responde **429 sin encolar** (fallo rápido), propaga la correlación
+(`X-Correlation-Id`, generado si no viene) y valida el JWT contra las claves del servidor de
+autorización. Su *timeout* de respuesta (15 s) está por encima del presupuesto global de la
+confirmación (8 s) para que sea el servicio de pedidos quien responde 504.
+
+**RestTemplate.** El proveedor se consume **en modo reactivo** (`WebClient` sobre Netty), porque
+el servicio pasa la mayor parte del tiempo esperando al proveedor y bloquear un hilo del *event
+loop* sería un error de diseño. Existe además un **adaptador bloqueante con `RestTemplate`**
+(`app.proveedor.modo=bloqueante`): delega la llamada en `Schedulers.boundedElastic()`, el pool
+dedicado a E/S bloqueante, y comparte con el reactivo la clasificación de fallos, el circuito, el
+límite, el *bulkhead* y la política de reintentos. Ambos adaptadores tienen **la misma batería de
+tests**, lo que permite comparar las dos aproximaciones y sirve de camino natural para un equipo
+con stack bloqueante (Spring MVC + JPA).
 
 ---
 
@@ -374,6 +442,53 @@ mayor parte del tiempo **esperando** al proveedor.
 * **Gitea**: el *Config Server* ya admite el repositorio de configuración en Gitea
   (`CONFIG_PROFILE=git`); el resto del pipeline es agnóstico al servidor Git, así que el mismo
   `Jenkinsfile` vale para GitHub o Gitea cambiando el origen del *checkout*.
+
+### Jenkins, SonarQube y Gitea: cómo se integran
+
+| Pieza | Cómo entra en el flujo | Qué necesita |
+|---|---|---|
+| **Jenkins** | Lee el `Jenkinsfile` del repositorio (pipeline declarativo) y ejecuta las etapas en un agente | Agente con JDK 17+, Node.js 18+, Docker, Python 3 y binarios de PostgreSQL (`initdb`/`psql`) |
+| **SonarQube** | La etapa `withSonarQubeEnv('SonarQube')` inyecta `SONAR_HOST_URL` y `SONAR_TOKEN` en el *build*; `./gradlew sonar` sube el código y la cobertura de JaCoCo | Un servidor SonarQube con el *webhook* apuntando a Jenkins (`<jenkins>/sonarqube-webhook/`), para que el *quality gate* bloquee la build |
+| **Gitea** | El *Config Server* puede leer la configuración de un repositorio Gitea (`CONFIG_PROFILE=git` + `spring.cloud.config.server.git.uri`), con los secretos cifrados con JCE (`{cipher}`) | Un repositorio Gitea con el `config-repo/` y la clave `CONFIG_ENCRYPT_KEY` |
+
+El `Jenkinsfile` no depende del servidor Git: `checkout scm` toma el origen de donde se haya
+configurado el *job*, así que el mismo pipeline vale contra GitHub (como está ahora), GitLab o
+Gitea. Los secretos viajan por la credencial de Jenkins `bdo-proveedor-token`, nunca por el
+repositorio.
+
+### Estado de la verificación de esta parte
+
+Lo que **sí** está verificado ejecutándolo en la máquina de la entrega:
+
+* Las etapas del pipeline son comandos del repositorio, y **todos** se han ejecutado a mano y en
+  verde: `./gradlew clean build -x test`, `./scripts/probar-postgresql.sh`,
+  `./gradlew test :pedidos-api:testJavaScript`, `./gradlew jacocoTestReport`, los seis
+  `docker build --build-arg MODULO=...` y `./scripts/verificar-e2e.sh`.
+* La configuración de Sonar vive en `build.gradle.kts` (el plugin de Gradle **no** lee
+  `sonar-project.properties`, solo el *scanner* de línea de comandos) y la cobertura que consume es
+  la de JaCoCo, con los informes en `build/reports/jacoco/test/jacoco.xml`.
+
+Lo que **no** está verificado, y conviene decir con todas las letras: **el pipeline no se ha
+ejecutado en Jenkins**, ni contra SonarQube, ni contra un Gitea real. No hay una instancia de
+ninguno de los tres levantada en la máquina donde se preparó esta entrega, así que las etapas que
+dependen de ellos (la que invoca `sonar` y la que espera al *quality gate*) **no se han podido
+ejecutar**. Lo que hay es la *declaración* completa del pipeline y la comprobación manual de
+cada comando por separado.
+
+### Trabajo en equipo
+
+El repositorio está en GitHub (`adriangainzahuep2/bdo-pedidos`) y el historial refleja el
+trabajo por ramas y revisiones:
+
+* Cada cambio va en su **rama** (`feature/...`, `docs/...`, `fix/...`), nunca directamente en
+  `main`.
+* Cada rama se sube y se abre un **pull request** con la descripción de qué cambia y **cómo se ha
+  verificado**; ahí es donde se revisa.
+* La fusión es un **merge commit** (no *squash*), para que se conserve el historial individual de
+  commits y se vea qué tocó cada cambio.
+
+Hay cuatro PR fusionados: la consola web con PKCE y el pipeline real, la reconstrucción del
+historial de commits, las instrucciones de Docker y el *healthcheck* del servidor de autorización.
 
 ---
 

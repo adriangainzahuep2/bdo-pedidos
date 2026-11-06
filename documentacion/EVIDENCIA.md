@@ -188,8 +188,9 @@ comprueba los flujos **a través del API Gateway** con un token OAuth2 real.
 ```
 
 La misma verificación sobre H2 (`./scripts/verificar-e2e.sh`) y sobre PostgreSQL
-(`E2E_BD=postgres ./scripts/verificar-e2e.sh`) da el mismo resultado: **26 comprobaciones
-correctas y 0 fallidas**.
+(`E2E_BD=postgres ./scripts/verificar-e2e.sh`) da el mismo resultado: **28 comprobaciones
+correctas y 0 fallidas** (el script cuenta los fallos y sale con ese número como código de
+salida).
 
 ---
 

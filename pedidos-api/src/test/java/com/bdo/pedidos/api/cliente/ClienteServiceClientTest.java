@@ -28,6 +28,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("ClienteServiceClient - integracion con el servicio de clientes simulado")
 class ClienteServiceClientTest {
 
+    /**
+     * Presupuesto amplio para los escenarios normales.
+     *
+     * <p>El timeout del cliente es el presupuesto de la llamada, no una asercion: un presupuesto
+     * corto en un escenario que debe <b>responder bien</b> hace que el test falle por la lentitud
+     * de la maquina (arrancar WireMock y Netty con la CPU saturada) y no por el codigo. El
+     * presupuesto corto se reserva para el escenario que <b>quiere</b> agotarlo.
+     *
+     * <p>Mismo criterio que {@code ProveedorTarifasClientReactivoTest}.
+     */
+    private static final Duration TIMEOUT_AMPLIO = Duration.ofSeconds(5);
+
+    /** Presupuesto corto: solo para el escenario en el que el timeout debe dispararse. */
+    private static final Duration TIMEOUT_CORTO = Duration.ofSeconds(1);
+
     private WireMockServer servicioClientes;
     private ClienteServiceClient cliente;
 
@@ -35,11 +50,16 @@ class ClienteServiceClientTest {
     void preparar() {
         servicioClientes = new WireMockServer(options().dynamicPort());
         servicioClientes.start();
+        cliente = clienteConTimeout(TIMEOUT_AMPLIO);
+    }
+
+    /** Crea el adaptador con el timeout indicado (el de produccion es 2 s). */
+    private ClienteServiceClient clienteConTimeout(Duration timeout) {
         ClientesProperties props = new ClientesProperties();
         props.setUrl("http://localhost:" + servicioClientes.port());
         props.setLoadBalanced(false);
-        props.setTimeout(Duration.ofSeconds(1));
-        cliente = new ClienteServiceClient(WebClient.builder().baseUrl(props.getUrl()).build(), props,
+        props.setTimeout(timeout);
+        return new ClienteServiceClient(WebClient.builder().baseUrl(props.getUrl()).build(), props,
                 CircuitBreaker.ofDefaults("prueba"));
     }
 
@@ -88,10 +108,12 @@ class ClienteServiceClientTest {
     @Test
     @DisplayName("si el servicio de clientes no responde a tiempo, es 'no disponible'")
     void servicioLento() {
+        // Presupuesto corto (1 s) y latencia tres veces mayor: el timeout se dispara siempre.
+        ClienteServiceClient clienteConTimeoutCorto = clienteConTimeout(TIMEOUT_CORTO);
         servicioClientes.stubFor(get(urlEqualTo("/api/clientes/7"))
                 .willReturn(okJson("{\"id\":7,\"nombre\":\"Ana\",\"email\":\"a@b.es\"}").withFixedDelay(3000)));
 
-        StepVerifier.create(cliente.buscarPorId(7L))
+        StepVerifier.create(clienteConTimeoutCorto.buscarPorId(7L))
                 .expectError(ClienteServiceNoDisponibleException.class)
                 .verify(Duration.ofSeconds(5));
     }

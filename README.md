@@ -86,6 +86,10 @@ curl -s -X POST http://localhost:8080/api/pedidos/1/confirmacion -H "Authorizati
 `documentacion/pedidos.http` tiene todas las peticiones listas para IntelliJ / VS Code. Con Docker:
 `cp .env.example .env` (rellenar) y `docker compose up --build` (PostgreSQL en el puerto 55432).
 
+> El estado exacto de la verificación de `docker compose` está en
+> **[documentacion/EVIDENCIA.md](documentacion/EVIDENCIA.md)** §4. El stack de servicios, en cambio,
+> sí está verificado en ejecución por `scripts/verificar-e2e.sh`.
+
 ### La consola web
 
 Con los seis servicios en marcha, la consola está en **<http://localhost:8080/>**: el gateway la

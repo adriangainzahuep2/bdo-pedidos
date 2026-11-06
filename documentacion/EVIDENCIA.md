@@ -194,7 +194,33 @@ salida).
 
 ---
 
-## 4. Trazabilidad con el enunciado
+## 4. Docker Compose
+
+```bash
+cp .env.example .env      # rellenar los secretos
+docker compose up --build
+```
+
+| Qué se comprueba | Resultado |
+|---|---|
+| `docker compose config` resuelve todas las variables de `.env` y los servicios | correcto |
+| Los ficheros montados existen (`scripts/postgres-init.sh`, los dos `schema.sql`, `mock-proveedor.py`) | correcto |
+| El DDL que aplica el compose es el mismo que usan los servicios (`classpath:db/schema.sql`) | correcto |
+| Los seis `bootJar` que copia el `Dockerfile` se construyen con el nombre y la versión esperados | correcto |
+| Los *healthcheck* apuntan al puerto que declara cada servicio | correcto |
+
+**Pendiente de verificación en ejecución**: el arranque completo (`docker compose up --build`) no
+se ha ejecutado en la máquina donde se preparó esta entrega: el socket de Docker
+(`/var/run/docker.sock`) pertenece al grupo `docker` y ese usuario no está en él, así que el
+comando requiere `sudo`. Lo que sí está verificado es que la configuración es coherente (tabla
+anterior) y que los artefactos que consume se construyen correctamente.
+
+El arranque de los mismos servicios **sí** está verificado, pero por otra vía: el E2E levanta el
+stack real (`scripts/verificar-e2e.sh`), con el proveedor simulado y el gateway delante.
+
+---
+
+## 5. Trazabilidad con el enunciado
 
 | Requisito | Dónde está resuelto | Cómo se verifica |
 |---|---|---|

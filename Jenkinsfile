@@ -68,18 +68,35 @@ pipeline {
 
         stage('Analisis de calidad (SonarQube)') {
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh './gradlew --console=plain sonar'
+                script {
+                    // El plugin "sonar" ya no trae el paso withSonarQubeEnv, asi que se
+                    // inyectan a mano las variables que espera el plugin de Gradle
+                    // (SONAR_HOST_URL y SONAR_TOKEN). El token sale de la credencial
+                    // de Jenkins, nunca del repositorio.
+                    def urlSonar = env.SONAR_HOST_URL ?: 'http://sonarqube:9000'
+                    withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                        withEnv(["SONAR_HOST_URL=${urlSonar}"]) {
+                            sh './gradlew --console=plain sonar'
+                        }
+                    }
                 }
             }
         }
 
         stage('Quality gate') {
             steps {
-                // Detiene el pipeline si el analisis no supera el quality gate. Requiere el
-                // webhook de SonarQube hacia Jenkins (<jenkins>/sonarqube-webhook/).
+                // Bloquea la build si el analisis no supera el quality gate. El id de la
+                // tarea de SonarQube lo deja el scanner en .scannerwork/report-task.txt.
                 timeout(time: 10, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                    script {
+                        def tarea = readFile('.scannerwork/report-task.txt').trim()
+                                .replaceAll('^ceTaskId=', '')
+                        echo "Tarea de SonarQube: ${tarea}"
+                        waitForQualityGate abortPipeline: true,
+                                serverUrl: (env.SONAR_HOST_URL ?: 'http://sonarqube:9000'),
+                                credentialsId: 'sonarqube-token',
+                                taskId: tarea
+                    }
                 }
             }
         }

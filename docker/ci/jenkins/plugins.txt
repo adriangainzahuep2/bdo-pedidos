@@ -1,0 +1,10 @@
+workflow-aggregator
+git
+sonar
+credentials
+plain-credentials
+credentials-binding
+junit
+timestamper
+build-timeout
+ws-cleanup

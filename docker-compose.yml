@@ -51,15 +51,24 @@ services:
     environment:
       <<: *common-env
       SERVER_PORT: 8888
-      # Backend "native" (directorio montado). Sin este perfil Spring Cloud Config usa
-      # el backend git por defecto y no arranca al no tener URI.
-      SPRING_PROFILES_ACTIVE: native
+      # Backend "native" (directorio montado) por defecto. Con CONFIG_PERFIL=git
+      # el Config Server lee la configuracion de un repositorio Git (Gitea) y
+      # descifra los secretos con JCE ({cipher}).
+      SPRING_PROFILES_ACTIVE: ${CONFIG_PERFIL:-native}
       CONFIG_REPO_LOCATION: file:///config-repo
       # Clave simetrica de cifrado JCE. En un entorno real sale de un
       # KMS/Vault, no de un fichero de variables.
       CONFIG_ENCRYPT_KEY: ${CONFIG_ENCRYPT_KEY:-}
+      # Backend git: solo se usan con CONFIG_PERFIL=git.
+      SPRING_CLOUD_CONFIG_SERVER_GIT_URI: ${CONFIG_GIT_URI:-}
+      SPRING_CLOUD_CONFIG_SERVER_GIT_USERNAME: ${CONFIG_GIT_USUARIO:-}
+      SPRING_CLOUD_CONFIG_SERVER_GIT_PASSWORD: ${CONFIG_GIT_PASSWORD:-}
+      SPRING_CLOUD_CONFIG_SERVER_GIT_DEFAULT_LABEL: ${CONFIG_GIT_RAMA:-main}
     volumes:
       - ./config-repo:/config-repo:ro
+    # Permite alcanzar al Gitea del stack de CI desde el contenedor.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8888:8888"
 

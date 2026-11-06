@@ -437,11 +437,58 @@ mayor parte del tiempo **esperando** al proveedor.
 
 * **Sonar**: configurado en `build.gradle.kts` (el plugin de Gradle **no** lee
   `sonar-project.properties`, solo el *scanner* de línea de comandos), con la cobertura de JaCoCo.
+  El análisis es de **un solo proyecto** de Sonar: el proyecto raíz de Gradle no tiene código, así
+  que se le indican explícitamente las fuentes, los tests y los informes de cobertura de cada
+  módulo (`sonar.sources`, `sonar.tests`, `sonar.coverage.jacoco.xmlReportPaths`).
 * **Secretos**: el token del proveedor llega de una credencial de Jenkins
-  (`bdo-proveedor-token`), nunca del repositorio.
+  (`bdo-proveedor-token`), nunca del repositorio. El de SonarQube, de otra
+  (`sonarqube-token`), y ambos se inyectan como variables de entorno.
 * **Gitea**: el *Config Server* ya admite el repositorio de configuración en Gitea
-  (`CONFIG_PROFILE=git`); el resto del pipeline es agnóstico al servidor Git, así que el mismo
+  (`CONFIG_PERFIL=git`); el resto del pipeline es agnóstico al servidor Git, así que el mismo
   `Jenkinsfile` vale para GitHub o Gitea cambiando el origen del *checkout*.
+
+### El stack de CI/CD en local (Jenkins + SonarQube + Gitea)
+
+Hay un `compose` aparte, `docker-compose.ci.yml`, que levanta las tres piezas para poder ejecutar
+el pipeline **de verdad** sin depender de una infraestructura externa:
+
+```bash
+./scripts/verificar-ci.sh      # levanta el stack, lo configura y lanza el pipeline
+```
+
+| Servicio | URL | Qué hace |
+|---|---|---|
+| Jenkins | <http://localhost:8091/> | Ejecuta el `Jenkinsfile` del repositorio (job `bdo-pedidos`) |
+| SonarQube | <http://localhost:9001/> | Análisis y *quality gate* del proyecto `bdo-pedidos` |
+| Gitea | <http://localhost:3000/> | Repositorio `bdo/config-repo` con la configuración que sirve el Config Server |
+
+El script hace todo el Bootstrap:
+
+1. Levanta SonarQube y Gitea y espera a que estén sanos.
+2. Crea en Gitea el usuario `bdo` y el repositorio `config-repo`, y sube el contenido de
+   `config-repo/` (la configuración compartida y la de cada servicio).
+3. Crea en SonarQube el token de API y el **webhook** hacia Jenkins (`http://jenkins:8080/sonar-webhook/`).
+4. Levanta Jenkins: su script de arranque (`docker/ci/jenkins/init.groovy.d/`) deja creados el
+   job, las dos credenciales y el servidor de SonarQube.
+5. Lanza el pipeline y sigue el log hasta el resultado.
+
+**El agente de Jenkins es una imagen propia** (`docker/ci/jenkins/Dockerfile`) porque el pipeline
+necesita, además del JDK 17 de la imagen oficial: Node 20 (los tests de JavaScript de la consola),
+Python 3 (el proveedor simulado), los binarios de PostgreSQL (`initdb`/`pg_ctl`/`psql` para
+`scripts/probar-postgresql.sh`) y el socket de Docker (para la etapa que construye las imágenes).
+
+> Los puertos del stack de CI (8091, 9001, 3000) son distintos de los de la aplicación a
+> propósito: el pipeline ejecuta `scripts/verificar-e2e.sh` **dentro** del contenedor de Jenkins, y
+> ese script levanta los servicios de la aplicación en los puertos 8080, 9000, 8761, 8081 y 8082.
+
+> **Nota de entorno**: Elasticsearch (el motor de SonarQube) bloquea sus índices en solo lectura
+> cuando el disco del host supera el 95 % de uso (*flood-stage watermark*), y entonces el
+> SonarQube no arranca. Por eso el compose arranca Elasticsearch con
+> `-Des.disk.threshold_enabled=false`.
+
+> La configuración del *Config Server* puede servirse desde Gitea en lugar del classpath:
+> `CONFIG_PERFIL=git` y `CONFIG_GIT_URI` (con `CONFIG_GIT_USUARIO` y `CONFIG_GIT_PASSWORD`) en el
+> `.env` hacen que el Config Server clone el repositorio `bdo/config-repo` de Gitea.
 
 ### Jenkins, SonarQube y Gitea: cómo se integran
 

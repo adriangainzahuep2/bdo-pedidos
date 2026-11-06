@@ -32,7 +32,7 @@ enunciado: resiliencia ante el proveedor, concurrencia y calidad de los tests.
 ### Tests
 
 ```bash
-./gradlew build                     # compila, 134 tests (unitarios + integracion) y cobertura JaCoCo
+./gradlew build                     # compila, 135 tests (unitarios + integracion) y cobertura JaCoCo
 ./gradlew :pedidos-dominio:test     # solo el dominio (Java puro, segundos)
 ./gradlew :pedidos-api:testJavaScript   # tests de JavaScript de la consola (node --test)
 ./scripts/probar-postgresql.sh      # esquema PostgreSQL + 10 filas por tabla + verificacion (PostgreSQL real)
@@ -127,6 +127,9 @@ docker compose ps                    # estado y salud de cada servicio
 El arranque está encadenado por dependencias: PostgreSQL y el registro de servicios exponen
 *healthcheck* y el resto no arranca hasta que están sanos.
 
+> Los *healthcheck* consultan también el espacio en disco del contenedor (marca `DOWN` si hay menos
+> de 10 MB libres): con el disco lleno, el stack se queda esperando aunque el código esté bien.
+
 **3. Comprobar que responde.** La consola web está en **<http://localhost:8080/>** (la publica el
 gateway) y el resto de servicios, en estos puertos:
 
@@ -178,10 +181,11 @@ docker compose down -v     # borra también el volumen: la base se vuelve a inic
 > ejecuta cuando el volumen de PostgreSQL está vacío. Si cambias un `schema.sql`, deja el stack
 > con `docker compose down -v` para que se vuelva a aplicar.
 
-> El estado exacto de la verificación de `docker compose` está en
-> **[documentacion/EVIDENCIA.md](documentacion/EVIDENCIA.md)** §4. El stack de servicios, en cambio,
-> sí está verificado en ejecución por `scripts/verificar-e2e.sh`, que los levanta en local sin
-> Docker (con H2, o con PostgreSQL real con `E2E_BD=postgres`).
+> La verificación completa del stack con Docker —los ocho servicios en marcha, el flujo completo
+> por el gateway, el proveedor caído y el reintento— está en
+> **[documentacion/EVIDENCIA.md](documentacion/EVIDENCIA.md)** §4. El mismo stack, levantado en
+> local sin Docker, también lo verifica `scripts/verificar-e2e.sh` (con H2, o con PostgreSQL real
+> con `E2E_BD=postgres`).
 
 ### La consola web
 
@@ -406,6 +410,9 @@ corrigió defectos que los tests de entonces no cubrían:
   servicios registrados (incluido el de autorización).
 * `docker compose` no podía arrancar (Eureka en otro puerto, Config Server sin perfil `native`,
   base de datos de clientes inexistente) y el Config Server tenía las propiedades mal anidadas.
+* El **arranque real del stack** (verificado después, en `documentacion/EVIDENCIA.md` §4) destapó
+  otro defecto: el servidor de autorización protegía su `/actuator/health` con el login, así que
+  su contenedor nunca pasaba a `healthy`. Ahora la salud es pública, como en los demás servicios.
 * El MDC se usaba como `ThreadLocal` en WebFlux; el plugin de Sonar no leía
   `sonar-project.properties`; el README afirmaba cosas que no eran ciertas (que el enunciado pedía
   Netflix OSS, un historial de Git que no existía).

@@ -4,6 +4,9 @@ Salida real de las verificaciones, ejecutadas con **JDK 21** como JVM de ejecuci
 compila con `--release 17`, que es la versión que exige el enunciado) y PostgreSQL 16.
 Todo es reproducible con los comandos de cada apartado.
 
+La verificación de Docker (§4) se ha ejecutado además con **Java 17** dentro de las imágenes
+(`eclipse-temurin:17`), que es la versión de runtime que usa el despliegue.
+
 ---
 
 ## 1. Tests unitarios y de integración
@@ -14,7 +17,7 @@ Todo es reproducible con los comandos de cada apartado.
 
 ```
 BUILD SUCCESSFUL
-134 tests, 0 fallos, 0 errores, 0 omitidos
+135 tests, 0 fallos, 0 errores, 0 omitidos
 ```
 
 | Módulo | Suite | Tests | Fallos | Omitidos |
@@ -39,7 +42,7 @@ BUILD SUCCESSFUL
 | `pedidos-api` | API de pedidos - adaptador bloqueante (RestTemplate) | 2 | 0 | 0 |
 | `pedidos-api` | API de pedidos - flujo completo con proveedor simulado | 17 | 0 | 0 |
 | `pedidos-api` | API de pedidos - timeout del proveedor | 1 | 0 | 0 |
-| `pedidos-auth` | AuthorizationServerIntegrationTest - authorization_code + PKCE del cliente publico | 8 | 0 | 0 |
+| `pedidos-auth` | AuthorizationServerIntegrationTest - authorization_code + PKCE del cliente publico | 9 | 0 | 0 |
 | `pedidos-cliente` | API de clientes - alta, consulta y control de acceso | 6 | 0 | 0 |
 | `pedidos-gateway` | API Gateway - autenticacion, correlacion, enrutado y consola web | 6 | 0 | 0 |
 | `pedidos-gateway` | API Gateway - limite de peticiones | 1 | 0 | 0 |
@@ -201,22 +204,107 @@ cp .env.example .env      # rellenar los secretos
 docker compose up --build
 ```
 
+### Arranque real verificado
+
+El arranque completo del stack **sí** está verificado en ejecución: los ocho servicios (los seis
+de la aplicación, PostgreSQL y el proveedor logístico simulado) arrancan, pasan a `healthy` y
+sirven tráfico real a través del gateway.
+
+```bash
+$ docker compose ps
+NAME                                IMAGE                        SERVICE               STATUS
+bdo-pedidos-pedidos-api-1           bdo/pedidos-api:1.0.0        pedidos-api           Up 7 minutes (healthy)
+bdo-pedidos-pedidos-auth-1          bdo/pedidos-auth:1.0.0       pedidos-auth          Up 50 seconds (healthy)
+bdo-pedidos-pedidos-cliente-1       bdo/pedidos-cliente:1.0.0    pedidos-cliente       Up 7 minutes (healthy)
+bdo-pedidos-pedidos-config-1        bdo/pedidos-config:1.0.0     pedidos-config        Up 7 minutes (healthy)
+bdo-pedidos-pedidos-gateway-1       bdo/pedidos-gateway:1.0.0    pedidos-gateway       Up 5 minutes (healthy)
+bdo-pedidos-pedidos-registry-1      bdo/pedidos-registry:1.0.0   pedidos-registry      Up 7 minutes (healthy)
+bdo-pedidos-postgres-1              postgres:16-alpine           postgres              Up 7 minutes (healthy)
+bdo-pedidos-proveedor-logistico-1   python:3.12-alpine           proveedor-logistico   Up 7 minutes
+```
+
 | Qué se comprueba | Resultado |
 |---|---|
 | `docker compose config` resuelve todas las variables de `.env` y los servicios | correcto |
 | Los ficheros montados existen (`scripts/postgres-init.sh`, los dos `schema.sql`, `mock-proveedor.py`) | correcto |
 | El DDL que aplica el compose es el mismo que usan los servicios (`classpath:db/schema.sql`) | correcto |
 | Los seis `bootJar` que copia el `Dockerfile` se construyen con el nombre y la versión esperados | correcto |
-| Los *healthcheck* apuntan al puerto que declara cada servicio | correcto |
+| Los ocho contenedores arrancan y pasan a `healthy` | correcto |
+| `scripts/postgres-init.sh` crea las dos bases (`pedidos` y `clientes`) y aplica su DDL | correcto |
+| Eureka registra los tres servicios de negocio (`PEDIDOS-API`, `PEDIDOS-CLIENTE`, `PEDIDOS-GATEWAY`) | correcto |
+| La consola web se sirve por el gateway (`index.html` y `app.js`, HTTP 200) | correcto |
+| `GET /actuator/health` responde `UP` en los seis servicios | correcto |
 
-**Pendiente de verificación en ejecución**: el arranque completo (`docker compose up --build`) no
-se ha ejecutado en la máquina donde se preparó esta entrega: el socket de Docker
-(`/var/run/docker.sock`) pertenece al grupo `docker` y ese usuario no está en él, así que el
-comando requiere `sudo`. Lo que sí está verificado es que la configuración es coherente (tabla
-anterior) y que los artefactos que consume se construyen correctamente.
+### Flujo completo contra el stack
 
-El arranque de los mismos servicios **sí** está verificado, pero por otra vía: el E2E levanta el
-stack real (`scripts/verificar-e2e.sh`), con el proveedor simulado y el gateway delante.
+Todo lo siguiente va **por el gateway** (`:8080`), con el token `client_credentials` emitido por
+el servidor de autorización del propio stack (`:9000`):
+
+```bash
+$ curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/api/pedidos ...   # 401 (sin token)
+$ curl -s -u pedidos-gateway:$SECRETO -d "grant_type=client_credentials&scope=..." \
+      http://localhost:9000/oauth2/token                                                    # token (827 caracteres)
+$ curl -s -X POST http://localhost:8080/api/clientes ...                                   # {"id":1,"nombre":"Empresa Docker S.L."}
+$ curl -s -X POST http://localhost:8080/api/pedidos ...                                    # 201, PENDIENTE, importeProductos 91.98
+$ curl -s -X POST http://localhost:8080/api/pedidos/1/confirmacion ...                     # CONFIRMADO, costeEnvio 8.39, total 100.37 EUR
+$ curl -s -X POST http://localhost:8080/api/pedidos/1/confirmacion ...                     # 200 idempotente
+```
+
+El importe lo calcula el servidor (2 × 45,99 = 91,98) y el coste de envío llega del proveedor
+simulado. En PostgreSQL:
+
+```
+ id | estado    | coste_envio | importe_total
+----+-----------+-------------+---------------
+  1 | CONFIRMADO|        8.39 |       100.37
+```
+
+### Resiliencia: proveedor caído y reintento
+
+Con el proveedor **parado** (`docker compose stop proveedor-logistico`), la confirmación responde
+`503` con `ProblemDetail` y el pedido **vuelve a `PENDIENTE`** con el motivo en `ultimo_error`:
+
+```
+2|PENDIENTE|No se pudo conectar con el proveedor logistico: connection timed out after 1000 ms
+```
+
+Al levantar el proveedor, la **misma** confirmación (reintentable, sin tocar nada) funciona:
+
+```
+ id | estado    | coste_envio | importe_total
+----+-----------+-------------+---------------
+  2 | CONFIRMADO|        5.54 |        25.04
+```
+
+Y la tabla de auditoría deja el rastro completo: tres intentos fallidos y un acierto.
+
+```
+ pedido_id | resultado | coste_envio | intentos_proveedor
+-----------+-----------+-------------+--------------------
+         1 | OK        |        8.39 |                  1
+         2 | ERROR     |             |                  3
+         2 | OK        |        5.54 |                  1
+```
+
+### Dos defectos encontrados por esta verificación
+
+1. **`pedidos-auth` nunca llegaba a `healthy`.** Su `/actuator/health` respondía `302` (lo
+   protege el login del servidor de autorización), así que el *healthcheck* del `Dockerfile` —que
+   busca `"status":"UP"`— no podía pasar nunca y el contenedor aparecía como `unhealthy` estando
+   arrancado. La API y el servicio de clientes ya publicaban la salud; ahora el servidor de
+   autorización hace lo mismo (`AuthorizationServerConfig`, `permitAll` sobre
+   `/actuator/health`), con un test que lo fija (`AuthorizationServerIntegrationTest.saludPublica`).
+2. **El arranque fallaba sin `.env`, y es lo correcto.** Sin secretos, el servidor de autorización
+   no arranca (`auth.password` en blanco) ni el de pedidos (`app.proveedor.token` en blanco): es un
+   fallo en el arranque, no un 500 en la primera petición. Con `.env` completo, los ocho servicios
+   arrancan.
+
+> Requisito del entorno: los *healthcheck* consultan `DiskSpaceHealthIndicator`, que marca `DOWN`
+> si el disco tiene menos de 10 MB libres. Con el disco del host al 100 % el arranque se queda
+> esperando, aunque el código esté bien.
+
+> El arranque de los mismos servicios **también** está verificado por otra vía: el E2E levanta el
+> stack real en local (`scripts/verificar-e2e.sh`), con el proveedor simulado y el gateway delante.
 
 ---
 

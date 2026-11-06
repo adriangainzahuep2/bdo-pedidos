@@ -107,7 +107,13 @@ public class AuthorizationServerConfig {
     @Bean
     @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
-        http.authorizeHttpRequests(autorizaciones -> autorizaciones.anyRequest().authenticated())
+        http.authorizeHttpRequests(autorizaciones -> autorizaciones
+                        // La salud es publica, como en el resto de servicios: el healthcheck de
+                        // Docker la consulta sin credenciales y, con el login por defecto, el
+                        // servidor de autorizacion responderia 302 y el contenedor quedaria
+                        // "unhealthy" pese a estar arrancado.
+                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
                 // La peticion previa de CORS (OPTIONS /oauth2/token) no la atiende la cadena
                 // del servidor de autorizacion (solo POST): llega aqui y debe responderse.

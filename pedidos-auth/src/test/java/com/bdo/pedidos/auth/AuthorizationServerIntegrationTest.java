@@ -77,6 +77,14 @@ class AuthorizationServerIntegrationTest {
     private JwtDecoder jwtDecoder;
 
     @Test
+    @DisplayName("La salud es publica: el healthcheck de Docker la consulta sin credenciales")
+    void saludPublica() throws Exception {
+        mvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+    }
+
+    @Test
     @DisplayName("client_credentials: el cliente de servicio obtiene un JWT firmado con scope como cadena (RFC 9068)")
     void clientCredentials() throws Exception {
         MvcResult resultado = mvc.perform(post("/oauth2/token")

@@ -33,13 +33,12 @@ services:
       # Jenkins y el E2E.
       SONAR_WEB_JAVAOPTS: "-Xms256m -Xmx512m"
       SONAR_CE_JAVAOPTS: "-Xms256m -Xmx384m"
-      # -Des.disk.threshold_enabled=false: Elasticsearch bloquea los indices en
-      # solo lectura cuando el disco del host supera el 95 % de uso (watermark
-      # flood-stage). En una maquina compartida eso deja el SonarQube sin poder
-      # inicializar ("cluster_block_exception ... disk usage exceeded
-      # flood-stage watermark"). Es la opcion que recomienda SonarQube para
-      # entornos donde el monitor de disco no es representativo.
-      SONAR_SEARCH_JAVAOPTS: "-Xms512m -Xmx512m -Des.disk.threshold_enabled=false"
+      # Elasticsearch bloquea los indices en solo lectura cuando el disco del host
+      # supera el 95 % de uso (watermark flood-stage) y entonces el analisis falla
+      # con "cluster_block_exception ... disk usage exceeded flood-stage watermark".
+      # El ajuste se hace por la API del cluster (scripts/verificar-ci.sh), no con
+      # una propiedad del sistema de la JVM: Elasticsearch no lee esa.
+      SONAR_SEARCH_JAVAOPTS: "-Xms512m -Xmx512m"
     ports:
       - "9001:9000"
     volumes:

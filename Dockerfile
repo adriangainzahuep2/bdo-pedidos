@@ -36,7 +36,16 @@ COPY pedidos-gateway/build.gradle.kts pedidos-gateway/
 COPY pedidos-registry/build.gradle.kts pedidos-registry/
 COPY pedidos-config/build.gradle.kts pedidos-config/
 
-RUN ./gradlew --console=plain dependencies --configuration runtimeClasspath || true
+# Se resuelven las dependencias de TODOS los modulos en una sola capa: como
+# el contenido es identico para las seis imagenes, Docker la reutiliza y solo
+# se descargan los artefactos una vez. Si se resolviera solo el modulo de cada
+# imagen, cada una repetiria la descarga (y el agente tardaria media hora).
+RUN ./gradlew --console=plain \
+        :pedidos-dominio:dependencies :pedidos-testkit:dependencies \
+        :pedidos-api:dependencies :pedidos-cliente:dependencies \
+        :pedidos-auth:dependencies :pedidos-gateway:dependencies \
+        :pedidos-registry:dependencies :pedidos-config:dependencies \
+        --configuration runtimeClasspath || true
 
 COPY . .
 RUN ./gradlew --console=plain :${MODULO}:bootJar -x test

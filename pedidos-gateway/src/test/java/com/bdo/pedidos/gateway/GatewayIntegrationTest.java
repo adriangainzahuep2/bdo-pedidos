@@ -15,6 +15,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.util.List;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
@@ -106,6 +107,22 @@ class GatewayIntegrationTest {
                 .header("Authorization", token())
                 .exchange()
                 .expectStatus().isNotFound();
+    }
+
+    @Test
+    @DisplayName("la consola web (HTML, CSS y JavaScript) se sirve sin token; la API sigue exigiendolo")
+    void consolaWebPublica() {
+        MICROSERVICIO.stubFor(get(urlEqualTo("/")).willReturn(aResponse().withStatus(200)
+                .withHeader("Content-Type", "text/html").withBody("<h1>Consola de pedidos</h1>")));
+        MICROSERVICIO.stubFor(get(urlEqualTo("/app.js")).willReturn(aResponse().withStatus(200)
+                .withHeader("Content-Type", "text/javascript").withBody("// consola")));
+
+        webTestClient.get().uri("/").exchange().expectStatus().isOk()
+                .expectBody(String.class).isEqualTo("<h1>Consola de pedidos</h1>");
+        webTestClient.get().uri("/app.js").exchange().expectStatus().isOk();
+        webTestClient.get().uri("/api/pedidos/1").exchange().expectStatus().isUnauthorized();
+        // Solo GET: la ruta de la consola no admite escrituras.
+        webTestClient.post().uri("/index.html").exchange().expectStatus().isUnauthorized();
     }
 
     @Test

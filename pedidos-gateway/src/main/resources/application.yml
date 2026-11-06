@@ -36,6 +36,13 @@ spring:
             - Path=/api/clientes/**
           filters:
             - StripPrefix=0
+        # Consola web (HTML, CSS y JavaScript): la sirve el servicio de pedidos y se publica
+        # a traves del gateway para que la pagina y la API compartan origen.
+        - id: consola-web
+          uri: lb://pedidos-api
+          predicates:
+            - Method=GET
+            - Path=/,/index.html,/app.js,/pkce.js,/styles.css,/favicon.ico
       # Tiempo maximo de respuesta del microservicio: por encima del presupuesto global
       # de la confirmacion (8 s) para que sea el servicio de pedidos quien responda 504.
       httpclient:

@@ -33,7 +33,8 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/actuator/health/**", "/actuator/health", "/actuator/info").permitAll()
-                        .pathMatchers(HttpMethod.GET, "/", "/index.html", "/app.js", "/styles.css", "/favicon.ico").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/", "/index.html", "/app.js", "/pkce.js", "/styles.css",
+                                "/favicon.ico").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/pedidos/**").hasAuthority("SCOPE_pedidos.write")
                         .pathMatchers(HttpMethod.GET, "/api/pedidos/**").hasAuthority("SCOPE_pedidos.read")
                         .anyExchange().authenticated())

@@ -67,15 +67,25 @@ subprojects {
 // SonarQube: el plugin se aplica en la raiz para que analice todos los modulos.
 // El plugin de Gradle NO lee sonar-project.properties (eso solo lo hace el scanner
 // de linea de comandos): la configuracion vive aqui. El token y la URL del servidor
-// los inyecta Jenkins (withSonarQubeEnv), nunca el repositorio.
+// los inyecta Jenkins (SONAR_TOKEN y SONAR_HOST_URL), nunca del repositorio.
+//
+// El analisis es de un UNICO proyecto de Sonar ("bdo-pedidos"). El proyecto raiz
+// no tiene codigo propio, asi que se le indican explicitamente las fuentes, los
+// tests y los informes de cobertura de cada modulo: si no, el analisis saldria
+// con cero ficheros (el modulo raiz no tiene src/main/java).
 // -----------------------------------------------------------------------------
+val modulos = subprojects.map { it.name }
+
 sonar {
     properties {
         property("sonar.projectKey", "bdo-pedidos")
         property("sonar.projectName", "BDO - Servicio de pedidos")
         property("sonar.sourceEncoding", "UTF-8")
         // Informe de cobertura de cada modulo (tarea jacocoTestReport).
-        property("sonar.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/jacoco.xml")
+        property("sonar.sources", modulos.joinToString(",") { "$it/src/main/java" })
+        property("sonar.tests", modulos.joinToString(",") { "$it/src/test/java" })
+        property("sonar.coverage.jacoco.xmlReportPaths",
+                modulos.joinToString(",") { "$it/build/reports/jacoco/test/jacoco.xml" })
         // Los DTO, las clases de arranque y la configuracion no tienen logica de negocio.
         property("sonar.coverage.exclusions", "**/dto/**,**/*Application.java,**/config/**")
         property("sonar.exclusions", "**/static/**")

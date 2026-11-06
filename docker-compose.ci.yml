@@ -1,0 +1,134 @@
+# =============================================================================
+# Stack de CI/CD: Jenkins + SonarQube + Gitea.
+#
+#   docker compose -f docker-compose.ci.yml up -d
+#
+# Es un stack SEPARADO del de la aplicacion (docker-compose.yml): no comparte
+# puertos ni volumenes, y se puede levantar y parar por separado.
+#
+#   Jenkins    : http://localhost:8091/   (UI)  -> contenedor :8080
+#   SonarQube  : http://localhost:9001/   (UI)  -> contenedor :9000
+#   Gitea      : http://localhost:3000/   (web) -> contenedor :3000
+#                ssh://git@localhost:2222/ -> contenedor :22
+#
+# Puertos distintos de los de la aplicacion a proposito: el pipeline ejecuta
+# scripts/verificar-e2e.sh DENTRO del contenedor de Jenkins, que levanta los
+# servicios de la aplicacion en los puertos 8080, 9000, 8761, 8081 y 8082.
+# Si ambos stacks compartieran puertos, el E2E no encontraria libres los suyos.
+#
+# Requisitos del agente (ver docker/ci/jenkins/Dockerfile): JDK 17, Node 20,
+# Python 3, binarios de PostgreSQL y el socket de Docker.
+# =============================================================================
+name: bdo-pedidos-ci
+
+services:
+
+  # --- Analisis de calidad --------------------------------------------------
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: bdo-ci-sonarqube
+    environment:
+      # SonarQube arranca tres JVM (Elasticsearch, motor de calculo y web).
+      # Se ajustan a la baja para que quepa en una maquina de 8 GB junto con
+      # Jenkins y el E2E.
+      SONAR_WEB_JAVAOPTS: "-Xms256m -Xmx512m"
+      SONAR_CE_JAVAOPTS: "-Xms256m -Xmx384m"
+      # -Des.disk.threshold_enabled=false: Elasticsearch bloquea los indices en
+      # solo lectura cuando el disco del host supera el 95 % de uso (watermark
+      # flood-stage). En una maquina compartida eso deja el SonarQube sin poder
+      # inicializar ("cluster_block_exception ... disk usage exceeded
+      # flood-stage watermark"). Es la opcion que recomienda SonarQube para
+      # entornos donde el monitor de disco no es representativo.
+      SONAR_SEARCH_JAVAOPTS: "-Xms512m -Xmx512m -Des.disk.threshold_enabled=false"
+    ports:
+      - "9001:9000"
+    volumes:
+      - sonarqube-datos:/opt/sonarqube/data
+      - sonarqube-extensiones:/opt/sonarqube/extensions
+      - sonarqube-logs:/opt/sonarqube/logs
+    healthcheck:
+      # /api/system/status devuelve {"status":"UP"} cuando el servidor esta listo.
+      # La imagen de SonarQube trae wget, no curl.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/api/system/status | grep -q UP || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    networks: [ci]
+
+  # --- Repositorio de configuracion ----------------------------------------
+  gitea:
+    image: gitea/gitea:1.22
+    container_name: bdo-ci-gitea
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__DOMAIN: localhost
+      GITEA__server__ROOT_URL: "http://localhost:3000/"
+      GITEA__server__SSH_DOMAIN: localhost
+      GITEA__server__SSH_PORT: "2222"
+      GITEA__server__SSH_LISTEN_PORT: "22"
+      GITEA__repository__DEFAULT_BRANCH: main
+      GITEA__service__DISABLE_REGISTRATION: "true"
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - gitea-datos:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks: [ci]
+
+  # --- Servidor de integracion continua ------------------------------------
+  jenkins:
+    build:
+      context: ./docker/ci/jenkins
+    image: bdo/jenkins-ci:1.0.0
+    container_name: bdo-ci-jenkins
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+      gitea:
+        condition: service_healthy
+    environment:
+      # Sin asistente de configuracion: la configuracion la hace el script de
+      # arranque (init.groovy.d).
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false"
+      # Jenkins se anuncia al resto del stack con esta URL. El webhook de
+      # SonarQube apunta aqui (http://jenkins:8080/sonar-webhook/), no a la
+      # URL publica del host: SonarQube debe poder alcanzarlo por la red.
+      JENKINS_URL: "http://jenkins:8080"
+      # Token de SonarQube (lo crea scripts/verificar-ci.sh en el servidor).
+      SONAR_TOKEN: "${SONAR_TOKEN:-}"
+      # Token del proveedor logístico (credencial de Jenkins).
+      PROVEEDOR_LOGISTICO_TOKEN: "${PROVEEDOR_LOGISTICO_TOKEN:-token-de-prueba}"
+      # Memoria de cada JVM del E2E (seis servicios a la vez).
+      JAVA_TOOL_OPTIONS: "-Xmx256m -XX:MaxMetaspaceSize=160m"
+    ports:
+      - "8091:8080"
+    volumes:
+      - jenkins-home:/var/jenkins_home
+      # La etapa "Imagenes Docker" construye en el daemon del host.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # El socket de Docker es root:docker; el usuario jenkins necesita el grupo
+    # para poder usarlo. El GID lo calcula scripts/verificar-ci.sh.
+    group_add:
+      - "${DOCKER_GID:-983}"
+    networks: [ci]
+
+networks:
+  ci:
+    driver: bridge
+
+volumes:
+  jenkins-home:
+  sonarqube-datos:
+  sonarqube-extensiones:
+  sonarqube-logs:
+  gitea-datos:

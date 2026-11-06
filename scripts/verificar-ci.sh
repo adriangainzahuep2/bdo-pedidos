@@ -66,6 +66,21 @@ log "SonarQube tarda en arrancar (Elasticsearch). Esperando..."
 esperar "${SONAR_PUBLICO}/api/system/status" "SonarQube" 120
 esperar "${GITEA_PUBLICO}/api/healthz" "Gitea" 60
 
+# Elasticsearch bloquea sus indices en solo lectura cuando el disco del host
+# supera el 95 % de uso (watermark flood-stage) y entonces el analisis falla
+# con "cluster_block_exception ... disk usage exceeded flood-stage watermark".
+# El ajuste va en el cluster de Elasticsearch (no es una propiedad del sistema
+# de la JVM, asi que -Des.disk.threshold_enabled=false NO sirve).
+log "Desactivando el umbral de disco de Elasticsearch..."
+ID_SONAR=$("${COMPOSE[@]}" ps -q sonarqube)
+"${COMPOSE[@]}" exec -T sonarqube sh -c \
+  'wget -qO- --header="Content-Type: application/json" --method=PUT \
+    --body-data="{\"persistent\":{\"cluster.routing.allocation.disk.threshold_enabled\":false}}" \
+    http://localhost:9001/_cluster/settings' >/dev/null 2>&1 \
+  && ok "Umbral de disco de Elasticsearch desactivado" \
+  || log "No se pudo cambiar el ajuste (sigue con el valor por defecto)"
+[ -n "$ID_SONAR" ] || true
+
 # ---------------------------------------------------------------------------
 # 2. Gitea: usuario, repositorio de configuracion y contenido
 # ---------------------------------------------------------------------------

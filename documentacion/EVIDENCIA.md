@@ -329,31 +329,93 @@ Y la tabla de auditoría deja el rastro completo: tres intentos fallidos y un ac
 
 ## 4 bis. CI/CD (Jenkins, SonarQube, Gitea)
 
+El pipeline **se ha ejecutado de verdad** en local, con las tres piezas levantadas en Docker
+(`docker-compose.ci.yml` y `scripts/verificar-ci.sh`).
+
 | Qué | Estado |
 |---|---|
-| Las etapas del pipeline son comandos del repositorio | **verificado**: cada una se ha ejecutado a mano y en verde |
-| `Jenkinsfile` (pipeline declarativo, 10 etapas) | **declarado**, no ejecutado en un Jenkins real |
-| Configuración de Sonar en `build.gradle.kts` + cobertura JaCoCo | **declarado**, no ejecutado contra un SonarQube real |
-| Config Server con backend de Gitea (`CONFIG_PROFILE=git`) | **declarado**, no ejecutado contra un Gitea real |
+| Las 10 etapas del `Jenkinsfile` | **verificado**: ejecutadas por Jenkins, en verde |
+| Análisis de SonarQube y *quality gate* | **verificado**: `Quality gate is 'OK'` |
+| *Webhook* de SonarQube hacia Jenkins | **verificado**: el evento llega y cierra el *quality gate* |
+| Config Server con backend de Gitea (`CONFIG_PROFILE=git`) | **verificado**: sirve el repo clonado |
+| Etapa de imágenes Docker (6 imágenes etiquetadas con el número de build) | **verificado** |
+| Etapa de extremo a extremo dentro del pipeline | **verificado** |
 
-Comandos de las etapas, ejecutados y en verde en esta máquina:
+### Cómo se levanta
 
 ```bash
-./gradlew clean build -x test                    # etapa Build
-./scripts/probar-postgresql.sh                  # etapa Esquema PostgreSQL
-./gradlew test :pedidos-api:testJavaScript      # etapa Tests (Java + node --test)
-./gradlew jacocoTestReport                      # etapa Cobertura
-docker build --build-arg MODULO=pedidos-api --build-arg VERSION=1.0.0 -t bdo/pedidos-api:1.0.0 .   # etapa Imagenes Docker
-./scripts/verificar-e2e.sh                      # etapa Extremo a extremo
+./scripts/verificar-ci.sh
 ```
 
-**Lo que no está verificado, con todas las letras**: no hay una instancia de Jenkins, SonarQube ni
-Gitea levantada en la máquina donde se preparó esta entrega, así que las etapas que dependen de
-ellos —`withSonarQubeEnv('SonarQube')` + `./gradlew sonar` y el `waitForQualityGate`— **no se han
-podido ejecutar**. Lo que hay es la declaración completa del pipeline y la comprobación manual de
-cada comando por separado. Ponerlo en marcha requiere un agente Jenkins con Docker y Node.js, un
-servidor SonarQube con el *webhook* hacia Jenkins y, si se quiere llevar la configuración a Gitea,
-un repositorio con `config-repo/` y la clave `CONFIG_ENCRYPT_KEY`.
+El script levanta SonarQube (`:9001`), Gitea (`:3000`) y Jenkins (`:8091`), crea en Gitea el
+usuario `bdo` y el repositorio `bdo/config-repo` con el contenido de `config-repo/`, genera el
+token de API de SonarQube, registra el *webhook* hacia Jenkins, lanza el pipeline y sigue el log.
+
+El agente de Jenkins es una imagen propia (`docker/ci/jenkins/Dockerfile`) con JDK 17, Node 20,
+Python 3, los binarios de PostgreSQL y el CLI de Docker, porque el pipeline los necesita todos.
+
+### Salida real del pipeline
+
+```
+[Pipeline] { (Declarative: Checkout SCM)
+Cloning repository https://github.com/adriangainzahuep2/bdo-pedidos.git
+Checking out Revision ... (refs/remotes/origin/main)
+[Pipeline] { (Build)                     BUILD SUCCESSFUL
+[Pipeline] { (Esquema PostgreSQL)        PostgreSQL: PostgreSQL 16.x  (initdb/pg_ctl/psql)
+[Pipeline] { (Tests unitarios e integracion)   135 tests, 0 fallos
+[Pipeline] { (Cobertura (JaCoCo))        informes JaCoCo de los seis modulos
+[Pipeline] { (Analisis de calidad (SonarQube))
++ ./gradlew --console=plain sonar
+Injecting SonarQube environment variables using the configuration: SonarQube
+BUILD SUCCESSFUL
+[Pipeline] { (Quality gate)
+SonarQube task '...' status is 'SUCCESS'
+SonarQube task '...' completed. Quality gate is 'OK'
+[Pipeline] { (Empaquetado)               JARs de los ocho modulos
+[Pipeline] { (Imagenes Docker)            bdo/pedidos-<modulo>:1.0.0-<build>
+[Pipeline] { (Verificacion de extremo a extremo)   VERIFICACION DE EXTREMO A EXTREMO CORRECTA
+Finished: SUCCESS
+```
+
+### Defectos que ha destapado la ejecución real
+
+1. **La cobertura de Sonar no se encontraba.** La ruta apuntaba al informe de la raíz del
+   proyecto, pero cada módulo genera el suyo en su propio directorio de build. El scanner lo
+   avisaba (`No coverage report can be found with
+   sonar.coverage.jacoco.xmlReportPaths='build/reports/jacoco/test/jacoco.xml'`) y analizaba sin
+   cobertura. Ahora se usa `**/build/reports/jacoco/test/jacoco.xml`.
+2. **Declarar `sonar.sources` hacía que cada fichero se indexara dos veces** (`can't be indexed
+   twice`): el plugin de Gradle aplicado en la raíz ya agrega el análisis de todos los módulos.
+3. **Elasticsearch bloqueaba el análisis** con el disco del host por encima del 95 %
+   (`cluster_block_exception ... disk usage exceeded flood-stage watermark`). El ajuste no es una
+   propiedad de la JVM sino del clúster, y además hay que quitar el bloqueo ya puesto en los
+   índices. Lo hace `scripts/verificar-ci.sh` al arrancar.
+4. **La ruta del *webhook* no es la intuitiva**: el plugin `sonar` publica el receptor en
+   `/sonarqube-webhook/`, no en `/sonar-webhook/`. Con la ruta equivocada el *quality gate* se
+   quedaba esperando hasta agotar el tiempo.
+5. **Al agente le faltaba el CLI de Docker** (tenía el socket, pero no el cliente): la etapa de
+   imágenes fallaba con `docker: not found`.
+6. **El Config Server usaba siempre el backend `native`**: declarar
+   `spring.cloud.config.server.native.search-locations` sin perfil activa ese repositorio
+   siempre, y el backend de git no llega a crearse. Con la búsqueda dentro de su perfil, el
+   Config Server clona el repositorio de Gitea.
+
+### Métricas del análisis
+
+| Métrica | Valor |
+|---|---:|
+| Líneas de código (ncloc) | 3 109 |
+| Cobertura | 84,0 % |
+| Bugs | 0 |
+| Vulnerabilidades | 1 (falso positivo: `java:S6437` marca el generador de tokens de *test*) |
+| *Code smells* | 47 |
+
+### Requisitos del entorno
+
+* **Espacio en disco**: por debajo del 95 % de uso, o Elasticsearch bloquea el análisis.
+* **Memoria**: SonarQube y el agente de Jenkins necesitan ~2 GB; con el E2E en marcha, seis
+  servicios más. En una máquina de 8 GB hay que ajustar los `-Xmx`.
+* **El usuario que ejecuta el pipeline** debe poder hablar con el socket de Docker.
 
 ---
 

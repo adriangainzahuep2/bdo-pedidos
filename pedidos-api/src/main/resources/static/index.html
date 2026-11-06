@@ -3,77 +3,102 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- URL del servidor de autorización. Vacía: el mismo host que la consola, puerto 9000. -->
+    <meta name="servidor-autorizacion" content="">
     <title>Consola de pedidos · BDO</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header>
     <h1>Consola de pedidos</h1>
-    <p class="sub">API Gateway · <code id="base">http://localhost:8080</code></p>
+    <p class="sub">API: <code id="base">http://localhost:8080</code>
+        · Autorización: <code id="servidor-autorizacion">http://localhost:9000</code></p>
 </header>
 
 <main>
-    <section class="card">
-        <h2>1 · Token</h2>
+    <section class="card" aria-labelledby="titulo-sesion">
+        <h2 id="titulo-sesion">1 · Sesión</h2>
         <p class="nota">
-            En producción este token llega con <code>authorization_code</code> + PKCE y lo entrega el
-            servidor de autorización. En esta demo se pega uno obtenido con
-            <code>client_credentials</code>:
-        </p>
-        <textarea id="token" rows="4" placeholder="eyJhbGciOiJSUzI1NiIs..."></textarea>
-        <button id="guardar-token" class="primario">Guardar token</button>
-        <span id="estado-token" class="estado"></span>
-    </section>
-
-    <section class="card">
-        <h2>2 · Cliente</h2>
-        <div class="fila">
-            <input id="cliente-nombre" type="text" placeholder="Nombre del cliente" value="Empresa Demo S.L.">
-            <input id="cliente-email" type="email" placeholder="email@empresa.com" value="demo@bdo-es.example">
-            <button id="crear-cliente" class="primario">Dar de alta</button>
-        </div>
-        <pre id="salida-cliente" class="salida"></pre>
-    </section>
-
-    <section class="card">
-        <h2>3 · Pedido</h2>
-        <div class="fila">
-            <label>Cliente (id) <input id="pedido-cliente-id" type="number" value="1" min="1"></label>
-            <label>Código postal <input id="pedido-cp" type="text" value="43840"></label>
-        </div>
-        <table class="lineas">
-            <thead>
-            <tr>
-                <th>Producto</th><th>Cantidad</th><th>Precio unitario</th><th>Peso unit. (kg)</th><th></th>
-            </tr>
-            </thead>
-            <tbody id="lineas"></tbody>
-        </table>
-        <button id="anadir-linea" class="secundario">Añadir línea</button>
-        <button id="crear-pedido" class="primario">Crear pedido</button>
-        <pre id="salida-pedido" class="salida"></pre>
-    </section>
-
-    <section class="card">
-        <h2>4 · Confirmación</h2>
-        <p class="nota">
-            Confirma el pedido: el servidor pide el coste de envío al proveedor logístico
-            (simulado), lo guarda y actualiza el total.
+            Inicio de sesión con <code>authorization_code</code> + PKCE: el servidor de
+            autorización pide usuario y contraseña y devuelve un codigo que la consola canjea por
+            el token, sin guardar ningún secreto en el navegador.
         </p>
         <div class="fila">
-            <label>Pedido (id) <input id="confirmar-id" type="number" value="1" min="1"></label>
-            <button id="confirmar" class="primario">Confirmar</button>
-            <button id="consultar" class="secundario">Consultar</button>
+            <button id="iniciar-sesion" type="button" class="primario">Iniciar sesión</button>
+            <button id="cerrar-sesion" type="button" class="secundario" hidden>Cerrar sesión</button>
         </div>
-        <pre id="salida-confirmacion" class="salida"></pre>
+        <p id="estado-sesion" class="estado" role="status" aria-live="polite"></p>
+        <details>
+            <summary>Usar un token obtenido por otra vía</summary>
+            <p class="nota">Por ejemplo, uno de <code>client_credentials</code> pedido con curl.</p>
+            <label class="bloque" for="token">Token de acceso (JWT)</label>
+            <textarea id="token" rows="3" placeholder="eyJhbGciOiJSUzI1NiIs..."></textarea>
+            <button id="guardar-token" type="button" class="secundario">Usar este token</button>
+        </details>
+    </section>
+
+    <section class="card" aria-labelledby="titulo-cliente">
+        <h2 id="titulo-cliente">2 · Cliente</h2>
+        <div class="fila">
+            <label>Nombre <input id="cliente-nombre" type="text" value="Empresa Demo S.L."></label>
+            <label>Email <input id="cliente-email" type="email" value="demo@bdo-es.example"></label>
+            <button id="crear-cliente" type="button" class="primario">Dar de alta</button>
+        </div>
+        <pre id="salida-cliente" class="salida" aria-live="polite"></pre>
+    </section>
+
+    <section class="card" aria-labelledby="titulo-pedido">
+        <h2 id="titulo-pedido">3 · Pedido</h2>
+        <p class="nota">Los importes no se envían: los calcula el servidor a partir de las líneas.</p>
+        <div class="fila">
+            <label>Cliente (id) <input id="pedido-cliente-id" type="number" value="1" min="1" step="1"></label>
+            <label>Código postal <input id="pedido-cp" type="text" value="43840" maxlength="10"></label>
+        </div>
+        <div class="tabla">
+            <table class="lineas">
+                <thead>
+                <tr>
+                    <th scope="col">Producto</th>
+                    <th scope="col">Cantidad</th>
+                    <th scope="col">Precio unitario (EUR)</th>
+                    <th scope="col">Peso unitario (kg)</th>
+                    <th scope="col"><span class="oculto">Quitar</span></th>
+                </tr>
+                </thead>
+                <tbody id="lineas"></tbody>
+            </table>
+        </div>
+        <div class="fila">
+            <button id="anadir-linea" type="button" class="secundario">Añadir línea</button>
+            <button id="crear-pedido" type="button" class="primario">Crear pedido</button>
+        </div>
+        <p id="resumen-pedido" class="resumen" hidden></p>
+        <pre id="salida-pedido" class="salida" aria-live="polite"></pre>
+    </section>
+
+    <section class="card" aria-labelledby="titulo-confirmacion">
+        <h2 id="titulo-confirmacion">4 · Confirmación</h2>
+        <p class="nota">
+            Confirmar pide el coste de envío al proveedor logístico (puede tardar hasta 5 s),
+            lo guarda y actualiza el total. Si el proveedor falla, el pedido vuelve a PENDIENTE.
+        </p>
+        <div class="fila">
+            <label>Pedido (id) <input id="confirmar-id" type="number" value="1" min="1" step="1"></label>
+            <button id="confirmar" type="button" class="primario">Confirmar</button>
+            <button id="consultar" type="button" class="secundario">Consultar</button>
+            <button id="cancelar" type="button" class="secundario">Cancelar</button>
+        </div>
+        <p id="resumen-confirmacion" class="resumen" hidden></p>
+        <pre id="salida-confirmacion" class="salida" aria-live="polite"></pre>
     </section>
 </main>
 
 <footer>
-    <p>Prueba técnica BDO · Java Senior · arquitectura de microservicios (Spring Boot 3, WebFlux,
-        R2DBC, OAuth2/JWT, Eureka, Spring Cloud Gateway, Resilience4j).</p>
+    <p>Prueba técnica BDO · Java 17 · Spring Boot 3 (WebFlux, R2DBC) · PostgreSQL/H2 ·
+        HTML, CSS y JavaScript sin dependencias.</p>
 </footer>
 
+<script src="pkce.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

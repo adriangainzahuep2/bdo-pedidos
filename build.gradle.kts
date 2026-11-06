@@ -74,18 +74,19 @@ subprojects {
 // tests y los informes de cobertura de cada modulo: si no, el analisis saldria
 // con cero ficheros (el modulo raiz no tiene src/main/java).
 // -----------------------------------------------------------------------------
-val modulos = subprojects.map { it.name }
-
 sonar {
     properties {
         property("sonar.projectKey", "bdo-pedidos")
         property("sonar.projectName", "BDO - Servicio de pedidos")
         property("sonar.sourceEncoding", "UTF-8")
         // Informe de cobertura de cada modulo (tarea jacocoTestReport).
-        property("sonar.sources", modulos.joinToString(",") { "$it/src/main/java" })
-        property("sonar.tests", modulos.joinToString(",") { "$it/src/test/java" })
+        // El plugin de Gradle aplicado en la raiz ya agrega el analisis de todos
+        // los modulos: NO hay que declarar sonar.sources (si se declaran, cada
+        // fichero se indexa dos veces y el analisis falla con "can't be indexed
+        // twice"). Lo que hay que corregir es la ruta de la cobertura: cada
+        // modulo genera su informe en su directorio de build, no en la raiz.
         property("sonar.coverage.jacoco.xmlReportPaths",
-                modulos.joinToString(",") { "$it/build/reports/jacoco/test/jacoco.xml" })
+                "**/build/reports/jacoco/test/jacoco.xml")
         // Los DTO, las clases de arranque y la configuracion no tienen logica de negocio.
         property("sonar.coverage.exclusions", "**/dto/**,**/*Application.java,**/config/**")
         property("sonar.exclusions", "**/static/**")

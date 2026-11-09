@@ -32,7 +32,7 @@ enunciado: resiliencia ante el proveedor, concurrencia y calidad de los tests.
 ### Tests
 
 ```bash
-./gradlew build                     # compila, 135 tests (unitarios + integracion) y cobertura JaCoCo
+./gradlew build                     # compila, 136 tests (unitarios + integracion) y cobertura JaCoCo
 ./gradlew :pedidos-dominio:test     # solo el dominio (Java puro, segundos)
 ./gradlew :pedidos-api:testJavaScript   # tests de JavaScript de la consola (node --test)
 ./scripts/probar-postgresql.sh      # esquema PostgreSQL + 10 filas por tabla + verificacion (PostgreSQL real)
@@ -437,14 +437,15 @@ mayor parte del tiempo **esperando** al proveedor.
 
 * **Sonar**: configurado en `build.gradle.kts` (el plugin de Gradle **no** lee
   `sonar-project.properties`, solo el *scanner* de línea de comandos), con la cobertura de JaCoCo.
-  El análisis es de **un solo proyecto** de Sonar: el proyecto raíz de Gradle no tiene código, así
-  que se le indican explícitamente las fuentes, los tests y los informes de cobertura de cada
-  módulo (`sonar.sources`, `sonar.tests`, `sonar.coverage.jacoco.xmlReportPaths`).
+  El análisis es de **un solo proyecto** de Sonar: el plugin aplicado en la raíz ya agrega los
+  módulos, así que **no** se declara `sonar.sources` (cada fichero se indexaría dos veces); lo que
+  se indica es dónde está la cobertura de cada módulo
+  (`sonar.coverage.jacoco.xmlReportPaths=**/build/reports/jacoco/test/jacoco.xml`).
 * **Secretos**: el token del proveedor llega de una credencial de Jenkins
   (`bdo-proveedor-token`), nunca del repositorio. El de SonarQube, de otra
   (`sonarqube-token`), y ambos se inyectan como variables de entorno.
 * **Gitea**: el *Config Server* ya admite el repositorio de configuración en Gitea
-  (`CONFIG_PERFIL=git`); el resto del pipeline es agnóstico al servidor Git, así que el mismo
+  (`CONFIG_PROFILE=git`); el resto del pipeline es agnóstico al servidor Git, así que el mismo
   `Jenkinsfile` vale para GitHub o Gitea cambiando el origen del *checkout*.
 
 ### El stack de CI/CD en local (Jenkins + SonarQube + Gitea)
@@ -483,11 +484,11 @@ Python 3 (el proveedor simulado), los binarios de PostgreSQL (`initdb`/`pg_ctl`/
 
 > **Nota de entorno**: Elasticsearch (el motor de SonarQube) bloquea sus índices en solo lectura
 > cuando el disco del host supera el 95 % de uso (*flood-stage watermark*), y entonces el
-> SonarQube no arranca. Por eso el compose arranca Elasticsearch con
-> `-Des.disk.threshold_enabled=false`.
+> análisis falla. No es una propiedad de la JVM sino del clúster: `scripts/verificar-ci.sh` la
+> desactiva por la API de Elasticsearch y quita el bloqueo de los índices al arrancar.
 
 > La configuración del *Config Server* puede servirse desde Gitea en lugar del classpath:
-> `CONFIG_PERFIL=git` y `CONFIG_GIT_URI` (con `CONFIG_GIT_USUARIO` y `CONFIG_GIT_PASSWORD`) en el
+> `CONFIG_PROFILE=git` y `CONFIG_GIT_URI` (con `CONFIG_GIT_USUARIO` y `CONFIG_GIT_PASSWORD`) en el
 > `.env` hacen que el Config Server clone el repositorio `bdo/config-repo` de Gitea.
 
 ### Jenkins, SonarQube y Gitea: cómo se integran
@@ -505,22 +506,11 @@ repositorio.
 
 ### Estado de la verificación de esta parte
 
-Lo que **sí** está verificado ejecutándolo en la máquina de la entrega:
-
-* Las etapas del pipeline son comandos del repositorio, y **todos** se han ejecutado a mano y en
-  verde: `./gradlew clean build -x test`, `./scripts/probar-postgresql.sh`,
-  `./gradlew test :pedidos-api:testJavaScript`, `./gradlew jacocoTestReport`, los seis
-  `docker build --build-arg MODULO=...` y `./scripts/verificar-e2e.sh`.
-* La configuración de Sonar vive en `build.gradle.kts` (el plugin de Gradle **no** lee
-  `sonar-project.properties`, solo el *scanner* de línea de comandos) y la cobertura que consume es
-  la de JaCoCo, con los informes en `build/reports/jacoco/test/jacoco.xml`.
-
-Lo que **no** está verificado, y conviene decir con todas las letras: **el pipeline no se ha
-ejecutado en Jenkins**, ni contra SonarQube, ni contra un Gitea real. No hay una instancia de
-ninguno de los tres levantada en la máquina donde se preparó esta entrega, así que las etapas que
-dependen de ellos (la que invoca `sonar` y la que espera al *quality gate*) **no se han podido
-ejecutar**. Lo que hay es la *declaración* completa del pipeline y la comprobación manual de
-cada comando por separado.
+El pipeline **se ha ejecutado de verdad** en Jenkins, contra SonarQube y Gitea levantados con
+`docker-compose.ci.yml`: el job clona este repositorio de GitHub, pasa las diez etapas (con
+`Quality gate is 'OK'`, cerrado por el *webhook*) y termina en `Finished: SUCCESS`. La salida, las
+métricas de Sonar y los defectos que destapó esa ejecución están en
+[`documentacion/EVIDENCIA.md` §4 bis](documentacion/EVIDENCIA.md).
 
 ### Trabajo en equipo
 

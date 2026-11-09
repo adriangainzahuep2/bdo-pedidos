@@ -468,7 +468,7 @@ El script hace todo el Bootstrap:
 1. Levanta SonarQube y Gitea y espera a que estén sanos.
 2. Crea en Gitea el usuario `bdo` y el repositorio `config-repo`, y sube el contenido de
    `config-repo/` (la configuración compartida y la de cada servicio).
-3. Crea en SonarQube el token de API y el **webhook** hacia Jenkins (`http://jenkins:8080/sonarqube-webhook/`).
+3. Crea en SonarQube el token de API y el **webhook** hacia Jenkins (`http://jenkins:8095/sonarqube-webhook/`).
 4. Levanta Jenkins: su script de arranque (`docker/ci/jenkins/init.groovy.d/`) deja creados el
    job, las dos credenciales y el servidor de SonarQube.
 5. Lanza el pipeline y sigue el log hasta el resultado.
@@ -481,6 +481,9 @@ Python 3 (el proveedor simulado), los binarios de PostgreSQL (`initdb`/`pg_ctl`/
 > Los puertos del stack de CI (8091, 9001, 3000) son distintos de los de la aplicación a
 > propósito: el pipeline ejecuta `scripts/verificar-e2e.sh` **dentro** del contenedor de Jenkins, y
 > ese script levanta los servicios de la aplicación en los puertos 8080, 9000, 8761, 8081 y 8082.
+> Por eso Jenkins tampoco escucha en su 8080 habitual dentro del contenedor, sino en el 8095
+> (`JENKINS_OPTS=--httpPort=8095`): con Jenkins en el 8080, el API Gateway del E2E no podía
+> arrancar y la última etapa fallaba.
 
 > **Nota de entorno**: Elasticsearch (el motor de SonarQube) bloquea sus índices en solo lectura
 > cuando el disco del host supera el 95 % de uso (*flood-stage watermark*), y entonces el

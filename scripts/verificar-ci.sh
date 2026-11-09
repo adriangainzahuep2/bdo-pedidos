@@ -157,14 +157,23 @@ SONAR_TOKEN="$TOKEN_SONAR" "${COMPOSE[@]}" up -d jenkins
 esperar "${JENKINS_PUBLICO}/login" "Jenkins" 120
 
 log "Registrando el webhook de SonarQube hacia Jenkins..."
+# URL de la red interna del stack: Jenkins escucha en el 8095 de su contenedor.
+URL_WEBHOOK="http://jenkins:8095/sonarqube-webhook/"
+# Se borran los webhooks "jenkins" previos (el volumen de SonarQube persiste y
+# podrian apuntar a una URL antigua) para que el registro sea idempotente.
+for CLAVE in $(curl -s -u "${ADMIN_SONAR}:${CONTRASENA_SONAR}" "${SONAR_PUBLICO}/api/webhooks/list" \
+    | python3 -c "import sys,json;[print(w['key']) for w in json.load(sys.stdin).get('webhooks',[]) if w['name']=='jenkins']" 2>/dev/null); do
+  curl -s -o /dev/null -u "${ADMIN_SONAR}:${CONTRASENA_SONAR}" -X POST \
+    "${SONAR_PUBLICO}/api/webhooks/delete" --data-urlencode "webhook=${CLAVE}"
+done
 # El servicio de webhooks de SonarQube 9.x es /api/webhooks/create y espera los
 # parametros como formulario, no como JSON.
 HTTP_HOOK=$(curl -s -o /dev/null -w '%{http_code}' -u "${ADMIN_SONAR}:${CONTRASENA_SONAR}" \
   -X POST "${SONAR_PUBLICO}/api/webhooks/create" \
   --data-urlencode "name=jenkins" \
-  --data-urlencode "url=http://jenkins:8080/sonarqube-webhook/")
+  --data-urlencode "url=${URL_WEBHOOK}")
 if [ "$HTTP_HOOK" = "200" ] || [ "$HTTP_HOOK" = "201" ]; then
-  ok "Webhook creado: http://jenkins:8080/sonarqube-webhook/ (HTTP ${HTTP_HOOK})"
+  ok "Webhook creado: ${URL_WEBHOOK} (HTTP ${HTTP_HOOK})"
 else
   log "No se pudo crear el webhook (HTTP ${HTTP_HOOK}); se continua."
 fi

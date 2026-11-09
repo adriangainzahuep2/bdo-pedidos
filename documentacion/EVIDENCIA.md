@@ -330,11 +330,14 @@ Y la tabla de auditoría deja el rastro completo: tres intentos fallidos y un ac
 ## 4 bis. CI/CD (Jenkins, SonarQube, Gitea)
 
 El pipeline **se ha ejecutado de verdad** en local, con las tres piezas levantadas en Docker
-(`docker-compose.ci.yml` y `scripts/verificar-ci.sh`).
+(`docker-compose.ci.yml` y `scripts/verificar-ci.sh`). La primera ejecución completa en verde es
+la **build #10** (9 de noviembre de 2026, sobre `main` en `ffcaa9d`). Las nueve anteriores no
+llegaron al final: se abortaron por el timeout global o fallaron, y cada una destapó uno de los
+defectos de la lista de abajo; la #9 pasó el *quality gate* y las imágenes y cayó en el E2E (defecto 7).
 
 | Qué | Estado |
 |---|---|
-| Las 10 etapas del `Jenkinsfile` | **verificado**: ejecutadas por Jenkins, en verde |
+| Las 10 etapas del `Jenkinsfile` | **verificado**: build #10, `Finished: SUCCESS` |
 | Análisis de SonarQube y *quality gate* | **verificado**: `Quality gate is 'OK'` |
 | *Webhook* de SonarQube hacia Jenkins | **verificado**: el evento llega y cierra el *quality gate* |
 | Config Server con backend de Gitea (`CONFIG_PROFILE=git`) | **verificado**: sirve el repo clonado |
@@ -354,28 +357,39 @@ token de API de SonarQube, registra el *webhook* hacia Jenkins, lanza el pipelin
 El agente de Jenkins es una imagen propia (`docker/ci/jenkins/Dockerfile`) con JDK 17, Node 20,
 Python 3, los binarios de PostgreSQL y el CLI de Docker, porque el pipeline los necesita todos.
 
-### Salida real del pipeline
+### Salida real del pipeline (build #10)
 
 ```
-[Pipeline] { (Declarative: Checkout SCM)
-Cloning repository https://github.com/adriangainzahuep2/bdo-pedidos.git
-Checking out Revision ... (refs/remotes/origin/main)
-[Pipeline] { (Build)                     BUILD SUCCESSFUL
-[Pipeline] { (Esquema PostgreSQL)        PostgreSQL: PostgreSQL 16.x  (initdb/pg_ctl/psql)
-[Pipeline] { (Tests unitarios e integracion)   135 tests, 0 fallos
-[Pipeline] { (Cobertura (JaCoCo))        informes JaCoCo de los seis modulos
+Checking out Revision ffcaa9d8ba8d6756eb017bc669888673a030122e (refs/remotes/origin/main)
+[Pipeline] { (Checkout)
+[Pipeline] { (Build)
+[Pipeline] { (Esquema PostgreSQL)
+========== VERIFICACION DE POSTGRESQL CORRECTA ==========
+[Pipeline] { (Tests unitarios e integracion)      informe JUnit: 135 correctos, 0 fallos, 0 omitidos
+[Pipeline] { (Cobertura (JaCoCo))
 [Pipeline] { (Analisis de calidad (SonarQube))
-+ ./gradlew --console=plain sonar
-Injecting SonarQube environment variables using the configuration: SonarQube
-BUILD SUCCESSFUL
 [Pipeline] { (Quality gate)
-SonarQube task '...' status is 'SUCCESS'
-SonarQube task '...' completed. Quality gate is 'OK'
-[Pipeline] { (Empaquetado)               JARs de los ocho modulos
-[Pipeline] { (Imagenes Docker)            bdo/pedidos-<modulo>:1.0.0-<build>
-[Pipeline] { (Verificacion de extremo a extremo)   VERIFICACION DE EXTREMO A EXTREMO CORRECTA
+SonarQube task 'AaHCJg4b7u9of3Ob9lEf' completed. Quality gate is 'OK'
+[Pipeline] { (Empaquetado)
+[Pipeline] { (Imagenes Docker)
+Successfully tagged bdo/pedidos-api:1.0.0-10
+Successfully tagged bdo/pedidos-cliente:1.0.0-10
+Successfully tagged bdo/pedidos-auth:1.0.0-10
+Successfully tagged bdo/pedidos-gateway:1.0.0-10
+Successfully tagged bdo/pedidos-registry:1.0.0-10
+Successfully tagged bdo/pedidos-config:1.0.0-10
+[Pipeline] { (Verificacion de extremo a extremo)
+[ OK ] API Gateway responde en http://localhost:8080/actuator/health (en 1 s)
+[ OK ] Una confirmacion devuelve 200 y la otra 409 (200 409 )
+[ OK ] Solo UNA llamada nueva al proveedor (0 -> 1)
+[ OK ] El proveedor devuelve 503 y la API responde 502
+[ OK ] El codigo se canjea con el verificador PKCE, sin secreto y con CORS para la consola
+========== VERIFICACION DE EXTREMO A EXTREMO CORRECTA ==========
 Finished: SUCCESS
 ```
+
+La build #10 tardó 2 min 9 s porque las capas de Docker ya estaban en la caché del host; desde
+cero, las seis imágenes tardan unos 25 minutos (de ahí el timeout de 90).
 
 ### Defectos que ha destapado la ejecución real
 
@@ -399,6 +413,12 @@ Finished: SUCCESS
    `spring.cloud.config.server.native.search-locations` sin perfil activa ese repositorio
    siempre, y el backend de git no llega a crearse. Con la búsqueda dentro de su perfil, el
    Config Server clona el repositorio de Gitea.
+7. **El API Gateway del E2E no arrancaba dentro de Jenkins.** El E2E corre en el contenedor de
+   Jenkins y levanta el gateway en el 8080, pero ese puerto era el del propio Jenkins (el
+   `8091:8080` del compose evitaba el choque en el host, no dentro del contenedor). La build #9
+   pasó el *quality gate* y las seis imágenes y cayó ahí: `API Gateway NO responde en
+   http://localhost:8080/actuator/health (tras 184 s)`. Ahora Jenkins escucha en el 8095 de su
+   contenedor (`JENKINS_OPTS=--httpPort=8095`) y el *webhook* de SonarQube apunta a ese puerto.
 
 ### Métricas del análisis
 

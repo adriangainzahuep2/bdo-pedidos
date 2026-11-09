@@ -29,7 +29,7 @@ RUN apt-get update \
 # Plugins del pipeline. Los que exigen la etapa:
 #   workflow-aggregator : pipeline declarativo (Jenkinsfile)
 #   git                 : checkout del repositorio
-#   sonarqube           : withSonarQubeEnv, waitForQualityGate y /sonar-webhook/
+#   sonarqube           : withSonarQubeEnv, waitForQualityGate y /sonarqube-webhook/
 #   credentials, plain-credentials, credentials-binding : la credencial del token
 #   junit               : publicacion de resultados de test
 #   timestamper         : la opcion timestamps() del pipeline

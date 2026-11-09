@@ -6,7 +6,7 @@
 # Es un stack SEPARADO del de la aplicacion (docker-compose.yml): no comparte
 # puertos ni volumenes, y se puede levantar y parar por separado.
 #
-#   Jenkins    : http://localhost:8091/   (UI)  -> contenedor :8080
+#   Jenkins    : http://localhost:8091/   (UI)  -> contenedor :8095
 #   SonarQube  : http://localhost:9001/   (UI)  -> contenedor :9000
 #   Gitea      : http://localhost:3000/   (web) -> contenedor :3000
 #                ssh://git@localhost:2222/ -> contenedor :22
@@ -15,6 +15,9 @@
 # scripts/verificar-e2e.sh DENTRO del contenedor de Jenkins, que levanta los
 # servicios de la aplicacion en los puertos 8080, 9000, 8761, 8081 y 8082.
 # Si ambos stacks compartieran puertos, el E2E no encontraria libres los suyos.
+# Por la misma razon Jenkins NO escucha en su 8080 de siempre DENTRO de su
+# contenedor: el E2E corre en ese mismo contenedor y su API Gateway necesita
+# el 8080 (con Jenkins ahi, el gateway no arrancaba y la etapa fallaba).
 #
 # Requisitos del agente (ver docker/ci/jenkins/Dockerfile): JDK 17, Node 20,
 # Python 3, binarios de PostgreSQL y el socket de Docker.
@@ -99,10 +102,13 @@ services:
       # Sin asistente de configuracion: la configuracion la hace el script de
       # arranque (init.groovy.d).
       JAVA_OPTS: "-Djenkins.install.runSetupWizard=false"
+      # Jenkins escucha en el 8095 dentro del contenedor: el 8080 es del API
+      # Gateway que levanta la etapa de extremo a extremo.
+      JENKINS_OPTS: "--httpPort=8095"
       # Jenkins se anuncia al resto del stack con esta URL. El webhook de
-      # SonarQube apunta aqui (http://jenkins:8080/sonarqube-webhook/), no a la
+      # SonarQube apunta aqui (http://jenkins:8095/sonarqube-webhook/), no a la
       # URL publica del host: SonarQube debe poder alcanzarlo por la red.
-      JENKINS_URL: "http://jenkins:8080"
+      JENKINS_URL: "http://jenkins:8095"
       # Token de SonarQube (lo crea scripts/verificar-ci.sh en el servidor).
       SONAR_TOKEN: "${SONAR_TOKEN:-}"
       # Token del proveedor logístico (credencial de Jenkins).
@@ -110,7 +116,7 @@ services:
       # Memoria de cada JVM del E2E (seis servicios a la vez).
       JAVA_TOOL_OPTIONS: "-Xmx256m -XX:MaxMetaspaceSize=160m"
     ports:
-      - "8091:8080"
+      - "8091:8095"
     volumes:
       - jenkins-home:/var/jenkins_home
       # La etapa "Imagenes Docker" construye en el daemon del host.

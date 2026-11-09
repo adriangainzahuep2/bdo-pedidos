@@ -17,7 +17,7 @@ La verificación de Docker (§4) se ha ejecutado además con **Java 17** dentro 
 
 ```
 BUILD SUCCESSFUL
-135 tests, 0 fallos, 0 errores, 0 omitidos
+136 tests, 0 fallos, 0 errores, 0 omitidos
 ```
 
 | Módulo | Suite | Tests | Fallos | Omitidos |
@@ -36,7 +36,7 @@ BUILD SUCCESSFUL
 | `pedidos-dominio` | CalculadoraTotalPedido - calculo unitario del total | 5 | 0 | 0 |
 | `pedidos-api` | PedidoService - orquestacion del caso de uso | 13 | 0 | 0 |
 | `pedidos-api` | ClienteServiceClient - integracion con el servicio de clientes simulado | 4 | 0 | 0 |
-| `pedidos-api` | PedidoRepository - persistencia y transiciones atomicas | 4 | 0 | 0 |
+| `pedidos-api` | PedidoRepository - persistencia y transiciones atomicas | 5 | 0 | 0 |
 | `pedidos-api` | ProveedorTarifasClientBloqueante - integracion contra el proveedor simulado | 6 | 0 | 0 |
 | `pedidos-api` | ProveedorTarifasClientReactivo - integracion contra el proveedor simulado | 16 | 0 | 0 |
 | `pedidos-api` | API de pedidos - adaptador bloqueante (RestTemplate) | 2 | 0 | 0 |

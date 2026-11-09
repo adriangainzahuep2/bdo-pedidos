@@ -15,7 +15,7 @@ pipeline {
     options {
         timestamps()
         buildDiscarder(logRotator(numToKeepStr: '20'))
-        // 60 minutos: construir las seis imagenes desde cero (sin cache de
+        // 90 minutos: construir las seis imagenes desde cero (sin cache de
         // construccion) tarda unos 25 minutos, y el E2E levanta seis servicios mas.
         timeout(time: 90, unit: 'MINUTES')
         disableConcurrentBuilds()

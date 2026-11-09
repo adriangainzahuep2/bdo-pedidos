@@ -126,4 +126,21 @@ class PedidoRepositoryTest {
         assertThat(leido.estado()).isEqualTo(EstadoPedido.PENDIENTE);
         assertThat(leido.ultimoError()).contains("abandonada");
     }
+
+    @Test
+    @DisplayName("la recuperacion no toca una confirmacion que sigue dentro del lease")
+    void recuperarNoRobaConfirmacionesEnCurso() {
+        Pedido persistido = repositorio.insertar(pedidoNuevo()).block();
+        Pedido confirmando = persistido.marcarConfirmando(Instant.parse("2026-11-03T10:05:00Z"));
+        repositorio.actualizarSiEstadoEs(persistido.id(), persistido.version(),
+                EstadoPedido.PENDIENTE, confirmando).block();
+
+        // El limite es anterior al inicio de la confirmacion: sigue en curso.
+        repositorio.recuperarConfirmacionesAbandonadas(Instant.parse("2026-11-03T10:00:00Z")).block();
+
+        Pedido leido = repositorio.buscarPorId(persistido.id()).block();
+        assertThat(leido.estado()).isEqualTo(EstadoPedido.CONFIRMANDO);
+        assertThat(leido.version()).isEqualTo(persistido.version() + 1);
+        assertThat(leido.fechaInicioConfirmacion()).isEqualTo(Instant.parse("2026-11-03T10:05:00Z"));
+    }
 }

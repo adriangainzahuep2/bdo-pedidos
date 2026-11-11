@@ -32,6 +32,13 @@ spring:
   cloud:
     discovery:
       enabled: false
+    stream:
+      bindings:
+        pedidoConfirmado-out-0:
+          destination: pedidos.confirmados
+          content-type: application/json
+      function:
+        autodetect: false
 
 app:
   proveedor:
@@ -92,6 +99,11 @@ resilience4j:
 # Observabilidad: la misma configuracion que en main. Las trazas y la exportacion de
 # metricas solo se activan en las suites con @AutoConfigureObservability.
 management:
+  health:
+    rabbit:
+      enabled: false
+    binders:
+      enabled: false
   endpoints:
     web:
       exposure:

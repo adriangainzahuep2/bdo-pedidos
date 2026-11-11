@@ -38,7 +38,7 @@ DECLARE
     tabla text;
     filas bigint;
 BEGIN
-    FOREACH tabla IN ARRAY ARRAY['cliente', 'pedido', 'pedido_linea', 'pedido_confirmacion_intento'] LOOP
+    FOREACH tabla IN ARRAY ARRAY['cliente', 'pedido', 'pedido_linea', 'pedido_confirmacion_intento', 'cliente_pedido_confirmado'] LOOP
         EXECUTE format('SELECT count(*) FROM %I', tabla) INTO filas;
         IF filas <> 10 THEN
             RAISE EXCEPTION 'FALLO: % tiene % filas (se esperaban 10)', tabla, filas;
@@ -115,6 +115,34 @@ BEGIN
 END $$;
 
 -- ----------------------------------------------------------------------------
+-- 2 bis. La proyeccion de clientes cuadra con los pedidos (eventual consistency)
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+    malos bigint;
+BEGIN
+    -- Cada pedido CONFIRMADO de la muestra esta en la proyeccion, con su cliente y su total.
+    SELECT count(*) INTO malos FROM pedido p
+      LEFT JOIN cliente_pedido_confirmado c ON c.pedido_id = p.id
+     WHERE p.estado = 'CONFIRMADO'
+       AND (c.pedido_id IS NULL OR c.cliente_id <> p.cliente_id OR c.importe_total <> p.importe_total
+            OR c.moneda <> p.moneda OR c.fecha_confirmacion <> p.fecha_confirmacion);
+    IF malos > 0 THEN RAISE EXCEPTION 'FALLO: % pedidos confirmados sin reflejo exacto en la proyeccion', malos; END IF;
+    RAISE NOTICE 'OK  cada pedido CONFIRMADO esta en la proyeccion de clientes con el mismo cliente, total y fecha';
+
+    -- Ningun pedido que siga en la muestra sin confirmar aparece como confirmado.
+    SELECT count(*) INTO malos FROM cliente_pedido_confirmado c JOIN pedido p ON p.id = c.pedido_id
+     WHERE p.estado <> 'CONFIRMADO';
+    IF malos > 0 THEN RAISE EXCEPTION 'FALLO: % pedidos no confirmados en la proyeccion', malos; END IF;
+    RAISE NOTICE 'OK  la proyeccion no contiene pedidos que no esten CONFIRMADOS';
+
+    -- El evento se recibe despues de la confirmacion.
+    SELECT count(*) INTO malos FROM cliente_pedido_confirmado WHERE fecha_recepcion < fecha_confirmacion;
+    IF malos > 0 THEN RAISE EXCEPTION 'FALLO: % eventos recibidos antes de la confirmacion', malos; END IF;
+    RAISE NOTICE 'OK  todos los eventos se recibieron despues de su confirmacion';
+END $$;
+
+-- ----------------------------------------------------------------------------
 -- 3. Las restricciones rechazan los datos incoherentes
 -- ----------------------------------------------------------------------------
 \o /dev/null
@@ -124,6 +152,15 @@ SELECT pg_temp.debe_fallar(
 SELECT pg_temp.debe_fallar(
     $$INSERT INTO cliente VALUES (11, NULL, 'nuevo@example.com', now())$$,
     '23502', 'cliente sin nombre');
+SELECT pg_temp.debe_fallar(
+    $$INSERT INTO cliente_pedido_confirmado VALUES (2, 2, 208.95, 'EUR', now(), now())$$,
+    '23505', 'evento PedidoConfirmado repetido (idempotencia por pedido)');
+SELECT pg_temp.debe_fallar(
+    $$INSERT INTO cliente_pedido_confirmado VALUES (2001, 99, 10.00, 'EUR', now(), now())$$,
+    '23503', 'evento de un cliente que no existe');
+SELECT pg_temp.debe_fallar(
+    $$INSERT INTO cliente_pedido_confirmado VALUES (2002, 1, 0.00, 'EUR', now(), now())$$,
+    '23514', 'pedido confirmado con total cero');
 SELECT pg_temp.debe_fallar(
     $$UPDATE pedido SET estado = 'ENVIADO' WHERE id = 1$$,
     '23514', 'estado inexistente');

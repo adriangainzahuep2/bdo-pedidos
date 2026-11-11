@@ -131,12 +131,16 @@ services:
     environment:
       <<: *common-env
       SERVER_PORT: 8080
-      SPRING_PROFILES_ACTIVE: eureka,postgres
+      # "eventos": consume PedidoConfirmado de RabbitMQ (proyeccion de pedidos por cliente).
+      SPRING_PROFILES_ACTIVE: eureka,postgres,eventos
+      RABBITMQ_HOST: rabbitmq
       SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/clientes
       SPRING_R2DBC_USERNAME: pedidos
       SPRING_R2DBC_PASSWORD: ${POSTGRES_PASSWORD:-pedidos}
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     ports:
       - "8082:8080"
@@ -151,7 +155,9 @@ services:
     environment:
       <<: *common-env
       SERVER_PORT: 8080
-      SPRING_PROFILES_ACTIVE: eureka,postgres
+      # "eventos": publica PedidoConfirmado en RabbitMQ al confirmar un pedido.
+      SPRING_PROFILES_ACTIVE: eureka,postgres,eventos
+      RABBITMQ_HOST: rabbitmq
       SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/pedidos
       SPRING_R2DBC_USERNAME: pedidos
       SPRING_R2DBC_PASSWORD: ${POSTGRES_PASSWORD:-pedidos}
@@ -163,6 +169,8 @@ services:
         condition: service_healthy
       proveedor-logistico:
         condition: service_started
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "8081:8080"
 
@@ -181,6 +189,23 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+
+  # --- Mensajeria -----------------------------------------------------------
+  # RabbitMQ: broker de los eventos asincronos (PedidoConfirmado). Consola de gestion
+  # en http://localhost:15672/ (guest/guest, solo desde localhost): exchanges, colas,
+  # mensajes pendientes y la cola de mensajes muertos.
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    networks: [bdo]
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   # --- Observabilidad -------------------------------------------------------
   # Zipkin recibe los spans de gateway, auth, pedidos y clientes y reconstruye cada

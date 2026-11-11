@@ -25,6 +25,8 @@ dependencies {
 
     implementation(libs.resilience4j.spring.boot3)
     implementation(libs.resilience4j.reactor)
+    // Filtro CircuitBreaker de las rutas: un circuito por microservicio de destino.
+    implementation(libs.spring.cloud.starter.circuitbreaker.reactor.resilience4j)
 
     testImplementation(project(":pedidos-testkit"))
     testImplementation(libs.wiremock.standalone)

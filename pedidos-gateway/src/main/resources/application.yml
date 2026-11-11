@@ -30,12 +30,22 @@ spring:
             - Path=/api/pedidos/**
           filters:
             - StripPrefix=0
+            # Un circuito por microservicio de destino: si pedidos-api cae, las rutas de
+            # clientes siguen abiertas. El fallback distingue 503 (caido) de 504 (lento).
+            - name: CircuitBreaker
+              args:
+                name: pedidosApi
+                fallbackUri: forward:/fallback/pedidos-api
         - id: cliente-api
           uri: lb://pedidos-cliente
           predicates:
             - Path=/api/clientes/**
           filters:
             - StripPrefix=0
+            - name: CircuitBreaker
+              args:
+                name: clientesApi
+                fallbackUri: forward:/fallback/pedidos-cliente
         # Consola web (HTML, CSS y JavaScript): la sirve el servicio de pedidos y se publica
         # a traves del gateway para que la pagina y la API compartan origen.
         - id: consola-web
@@ -43,6 +53,12 @@ spring:
           predicates:
             - Method=GET
             - Path=/,/index.html,/app.js,/pkce.js,/styles.css,/favicon.ico
+          filters:
+            # La consola la sirve pedidos-api: comparte su circuito.
+            - name: CircuitBreaker
+              args:
+                name: pedidosApi
+                fallbackUri: forward:/fallback/pedidos-api
       # Tiempo maximo de respuesta del microservicio: por encima del presupuesto global
       # de la confirmacion (8 s) para que sea el servicio de pedidos quien responda 504.
       httpclient:
@@ -56,6 +72,41 @@ spring:
           enabled: false
 
 resilience4j:
+  # Circuitos de las rutas (filtro CircuitBreaker). Cuentan como fallo las EXCEPCIONES
+  # hacia el microservicio (conexion rechazada, sin instancias en Eureka, timeout de
+  # respuesta), NO sus respuestas 5xx: un 502/503/504 de pedidos-api es su forma correcta
+  # de informar de que el PROVEEDOR falla, y el microservicio esta sano.
+  circuitbreaker:
+    configs:
+      microservicio:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        # Una confirmacion legitima tarda hasta 8 s (presupuesto del proveedor).
+        slow-call-duration-threshold: 10s
+        slow-call-rate-threshold: 100
+        wait-duration-in-open-state: 15s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+    instances:
+      pedidosApi:
+        base-config: microservicio
+      clientesApi:
+        base-config: microservicio
+  # El TimeLimiter de Spring Cloud CircuitBreaker corta a 1 s por defecto: cortaria las
+  # confirmaciones (hasta 8 s). Se deja por encima del response-timeout (15 s), para que
+  # el limite efectivo sea el del cliente HTTP del gateway.
+  timelimiter:
+    configs:
+      microservicio:
+        timeout-duration: 16s
+        cancel-running-future: true
+    instances:
+      pedidosApi:
+        base-config: microservicio
+      clientesApi:
+        base-config: microservicio
   ratelimiter:
     instances:
       apiGateway:

@@ -25,6 +25,9 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/actuator/health/**", "/actuator/health", "/actuator/info").permitAll()
+                        // Metricas para Prometheus (sin datos de negocio). En produccion, en un
+                        // puerto de gestion propio solo accesible desde la red interna.
+                        .pathMatchers("/actuator/prometheus").permitAll()
                         // Ficheros estaticos de la consola web: no contienen datos; todas las
                         // llamadas que hace la consola a la API llevan su token.
                         .pathMatchers(HttpMethod.GET, "/", "/index.html", "/app.js", "/pkce.js",

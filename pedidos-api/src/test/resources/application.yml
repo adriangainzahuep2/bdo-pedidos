@@ -6,6 +6,9 @@
 # - El proveedor logistico se sustituye por un stub WireMock cuya URL se
 #   inyecta dinamicamente (ver ProveedorLogisticoStub).
 spring:
+  # Igual que en main (este fichero sustituye entero al de main en los tests).
+  reactor:
+    context-propagation: auto
   sql:
     init:
       mode: always
@@ -86,7 +89,30 @@ resilience4j:
   # Los reintentos NO se configuran aqui: se derivan de app.proveedor.* (max-intentos,
   # backoff-*) para que los adaptadores reactivo y bloqueante usen la misma politica.
 
+# Observabilidad: la misma configuracion que en main. Las trazas y la exportacion de
+# metricas solo se activan en las suites con @AutoConfigureObservability.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  tracing:
+    sampling:
+      probability: 1.0
+    baggage:
+      remote-fields: X-Correlation-Id
+      correlation:
+        fields: X-Correlation-Id
+  metrics:
+    tags:
+      application: pedidos-api
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
 logging:
+  pattern:
+    correlation: "[pedidos-api,%X{traceId:-},%X{spanId:-},%X{X-Correlation-Id:-}] "
   level:
     root: WARN
     com.bdo.pedidos: INFO

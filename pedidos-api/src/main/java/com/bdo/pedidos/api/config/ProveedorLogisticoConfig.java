@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
@@ -45,12 +46,15 @@ public class ProveedorLogisticoConfig {
 
     /** Cliente HTTP reactivo con los timeouts de conexion y de respuesta del proveedor. */
     @Bean
-    public WebClient webClientProveedor(ProveedorLogisticoProperties properties) {
+    public WebClient webClientProveedor(ProveedorLogisticoProperties properties,
+                                        ObservationRegistry observaciones) {
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) properties.getConnectTimeout().toMillis())
                 .responseTimeout(properties.getTimeoutPorIntento().plus(MARGEN_TIMEOUT_NETTY));
 
         return WebClient.builder()
+                // Span de la llamada al proveedor: en Zipkin se ve cuanto tarda cada intento.
+                .observationRegistry(observaciones)
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .defaultHeader("Accept", "application/json")
                 .build();
@@ -91,10 +95,13 @@ public class ProveedorLogisticoConfig {
     /** Cliente HTTP bloqueante, con los mismos timeouts que el reactivo. */
     @Bean
     @ConditionalOnProperty(name = "app.proveedor.modo", havingValue = ProveedorLogisticoProperties.MODO_BLOQUEANTE)
-    public RestTemplate restTemplateProveedor(ProveedorLogisticoProperties properties) {
+    public RestTemplate restTemplateProveedor(ProveedorLogisticoProperties properties,
+                                              ObservationRegistry observaciones) {
         SimpleClientHttpRequestFactory factoria = new SimpleClientHttpRequestFactory();
         factoria.setConnectTimeout(properties.getConnectTimeout());
         factoria.setReadTimeout(properties.getTimeoutPorIntento());
-        return new RestTemplate(factoria);
+        RestTemplate restTemplate = new RestTemplate(factoria);
+        restTemplate.setObservationRegistry(observaciones);
+        return restTemplate;
     }
 }

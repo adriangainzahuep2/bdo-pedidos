@@ -19,6 +19,8 @@ x-common: &common
     AUTH_ISSUER: http://pedidos-auth:9000
     AUTH_ISSUER_URI: http://pedidos-auth:9000
     AUTH_JWKS_URI: http://pedidos-auth:9000/oauth2/jwks
+    # Trazas distribuidas: cada servicio instrumentado envia sus spans a Zipkin.
+    ZIPKIN_URL: http://zipkin:9411/api/v2/spans
 
 services:
 
@@ -179,6 +181,28 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+
+  # --- Observabilidad -------------------------------------------------------
+  # Zipkin recibe los spans de gateway, auth, pedidos y clientes y reconstruye cada
+  # peticion de extremo a extremo (UI en http://localhost:9411/). Almacenamiento en
+  # memoria: suficiente para una demo; en produccion, Elasticsearch o Cassandra.
+  zipkin:
+    image: openzipkin/zipkin:3.4.2
+    restart: unless-stopped
+    networks: [bdo]
+    ports:
+      - "9411:9411"
+
+  # Prometheus recoge /actuator/prometheus de cada servicio cada 15 s
+  # (UI y consultas PromQL en http://localhost:9090/).
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    networks: [bdo]
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
 
   # --- Proveedor logistico simulado (sustituye al proveedor real) ------------
   proveedor-logistico:

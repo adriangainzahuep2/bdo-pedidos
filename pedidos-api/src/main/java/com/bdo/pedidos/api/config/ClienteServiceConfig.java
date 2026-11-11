@@ -4,6 +4,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.web.reactive.function.client.WebClient;
 
 /**
@@ -37,8 +38,11 @@ public class ClienteServiceConfig {
          */
         @Bean
         @LoadBalanced
-        WebClient.Builder loadBalancedWebClientBuilder() {
-            return WebClient.builder();
+        WebClient.Builder loadBalancedWebClientBuilder(ObservationRegistry observaciones) {
+            // Con el ObservationRegistry, cada llamada crea un span hijo y lleva el contexto
+            // de traza (traceparent y el baggage X-Correlation-Id) al servicio de clientes.
+            return WebClient.builder()
+                    .observationRegistry(observaciones);
         }
 
         @Bean
@@ -53,8 +57,11 @@ public class ClienteServiceConfig {
     static class Directo {
 
         @Bean
-        WebClient webClientClientes(ClientesProperties properties) {
-            return WebClient.builder().baseUrl(properties.getUrl()).build();
+        WebClient webClientClientes(ClientesProperties properties, ObservationRegistry observaciones) {
+            return WebClient.builder()
+                    .observationRegistry(observaciones)
+                    .baseUrl(properties.getUrl())
+                    .build();
         }
     }
 }

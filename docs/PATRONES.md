@@ -48,6 +48,14 @@ Si hay que defender solo dos, son los que responden directamente al enunciado: e
 | **Transacciones cortas, nunca durante la llamada externa** | Confirmación en tres fases | Un proveedor lento no retiene conexiones de la base de datos. |
 | **Idempotencia** | Confirmar un pedido ya confirmado | Devuelve 200 sin volver a llamar al proveedor. |
 | **Registro de auditoría** | Tabla `pedido_confirmacion_intento` | Cada intento queda registrado con su resultado, sus llamadas y su duración. |
+| **Circuit breaker por microservicio en el gateway + fallback** | Filtro `CircuitBreaker` (`pedidosApi`, `clientesApi`) y `FallbackController` | Un microservicio caído responde 503 al momento sin afectar a las otras rutas. |
+| **Evento de dominio** | `PedidoConfirmado` (dominio) | Anuncia un hecho consumado con los datos que necesita quien lo escuche. |
+| **Publicación / suscripción** | Spring Cloud Stream: `pedidos.confirmados` → grupo `pedidos-cliente` | Desacopla el productor de sus consumidores; cada grupo tiene su cola duradera. |
+| **Consumidor idempotente** | Clave primaria `pedido_id` en `cliente_pedido_confirmado` | La entrega "al menos una vez" no cuenta dos veces un mensaje repetido. |
+| **Cola de mensajes muertos (DLQ)** | `pedidos.confirmados.pedidos-cliente.dlq` | Un mensaje que no se puede procesar se aparta tras 3 intentos sin bloquear los siguientes. |
+| **Lector tolerante (*tolerant reader*)** | `PedidoConfirmadoEvento` con `@JsonIgnoreProperties(ignoreUnknown = true)` | El productor puede añadir campos sin romper al consumidor. |
+| **Proyección / modelo de lectura** | `cliente_pedido_confirmado` + `GET /api/clientes/{id}/pedidos-confirmados` | Responder con datos locales sin consultar a otro servicio (consistencia en diferido). |
+| **Identificador de correlación** | `X-Correlation-Id` como *baggage* de la traza | Une las líneas de log de una petición en todos los servicios. |
 
 ## 4. Patrones clásicos (GoF) y otros
 

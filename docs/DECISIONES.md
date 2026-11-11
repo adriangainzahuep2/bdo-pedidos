@@ -228,7 +228,7 @@ importe ni se cambia la moneda en silencio).
 * El servidor de configuración (`pedidos-config`) admite valores cifrados con JCE
   (`{cipher}...`) y los descifra con la clave del entorno (`CONFIG_ENCRYPT_KEY`), que **tampoco**
   está en el repositorio; `config-repo/pedidos-api.yml` explica cómo cifrar el token. En esta
-  entrega los microservicios **no** importan todavía el Config Server (ver README, "Qué queda
+  entrega los microservicios **no** importan todavía el Config Server (ver README §4, "Qué queda
   fuera"): el token llega por el entorno.
 * En los tests, el token es una constante de test (`token-de-prueba`), que es lo correcto: un
   token de pruebas no es un secreto.
@@ -579,7 +579,7 @@ tiempo fijo.
 
 * **Configuración centralizada** (Spring Cloud Config, backend `native` o Gitea con
   `CONFIG_PROFILE=git`) con **cifrado JCE** de los valores sensibles y endpoints `/encrypt` y
-  `/decrypt`. Los servicios aún no la importan (README, "Qué queda fuera").
+  `/decrypt`. Los servicios aún no la importan (README §4, "Qué queda fuera").
 * **Correlación de extremo a extremo**: `X-Correlation-Id` generado en el gateway (si el cliente no
   lo envía), reenviado al microservicio y devuelto en la respuesta. Viaja como *baggage* de
   Micrometer Tracing y entra en el MDC: cada línea de log lleva servicio, `traceId`, `spanId` y
@@ -612,7 +612,7 @@ tiempo fijo.
 | Token propagado entre servicios | Token de servicio propio | Menos infraestructura; si las políticas difieren, token propio (documentado) |
 | Repositorios con SQL explícito | `ReactiveCrudRepository.save()` | H2 no soporta `INSERT ... RETURNING`; además el CAS necesita SQL explícito |
 | Secuencia de base de datos para los ids | `IDENTITY` | `nextval` es portable entre H2 y PostgreSQL y permite conocer el id antes de insertar |
-| Sin idempotency key | Clave de idempotencia | No lo pide el enunciado; documentado como mejora (README §6) |
+| Sin idempotency key | Clave de idempotencia | No lo pide el enunciado; documentado como mejora (README §4) |
 | R2DBC con SQL explícito | JPA / Jakarta Persistence (Hibernate, Spring Data JPA) | JPA es bloqueante (bloquearía el *event loop*), detecta el conflicto al hacer *flush* y exige entidades mutables ([PLATAFORMA.md](PLATAFORMA.md) §7) |
 | `WebClient` | OpenFeign | Feign es bloqueante y no admite `Mono`; alternativa declarativa reactiva: HTTP Interfaces de Spring 6 ([PLATAFORMA.md](PLATAFORMA.md) §8) |
 | Circuito del gateway cuenta solo excepciones | Contar también los 5xx del microservicio | Un 502/503 de `pedidos-api` informa de un fallo del proveedor: abriría el circuito de toda la API, también las consultas |
@@ -659,6 +659,21 @@ corrigió defectos que los tests de entonces no cubrían:
 * El MDC se usaba como `ThreadLocal` en WebFlux; el plugin de Sonar no leía
   `sonar-project.properties`; el README afirmaba cosas que no eran ciertas (que el enunciado pedía
   Netflix OSS, un historial de Git que no existía).
+* El **arranque real del stack** destapó que el servidor de autorización protegía su
+  `/actuator/health` con el login: su contenedor nunca pasaba a `healthy`. Ahora la salud es
+  pública, como en los demás servicios.
+* Al ejecutar el **pipeline de verdad** en Jenkins: la cobertura no llegaba a Sonar, el *webhook*
+  del *quality gate* tenía la ruta equivocada y el E2E chocaba con el propio Jenkins en el puerto
+  8080 ([CICD.md](CICD.md), [EVIDENCIA.md](../documentacion/EVIDENCIA.md) §4 bis).
+
+Y al añadir la plataforma ([PLATAFORMA.md](PLATAFORMA.md)), los tests nuevos encontraron:
+
+* Los `WebClient` se creaban sin `ObservationRegistry` y `sinCancelacion()` suscribía sin el
+  Contexto de Reactor: la traza se cortaba y la llamada al proveedor empezaba una traza nueva.
+* El TimeLimiter de Spring Cloud CircuitBreaker corta a 1 s por defecto: habría cortado las
+  confirmaciones en el gateway.
+* El conversor de Spring Cloud Function no usa el Jackson de Boot y fallaba con los campos que el
+  consumidor no conocía; y H2 no admite `ON CONFLICT DO NOTHING`.
 
 ---
 

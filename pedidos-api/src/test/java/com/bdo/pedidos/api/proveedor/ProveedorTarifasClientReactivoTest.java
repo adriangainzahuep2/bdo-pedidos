@@ -1,5 +1,6 @@
 package com.bdo.pedidos.api.proveedor;
 
+import io.micrometer.observation.ObservationRegistry;
 import com.bdo.pedidos.api.config.ProveedorLogisticoConfig;
 import com.bdo.pedidos.api.config.ProveedorLogisticoProperties;
 import com.bdo.pedidos.dominio.error.ProveedorHttpException;
@@ -92,7 +93,7 @@ class ProveedorTarifasClientReactivoTest {
     /** Adaptador con el WebClient de produccion (mismos timeouts de Netty). */
     private ProveedorTarifasClientReactivo crearCliente(ProveedorLogisticoProperties props, CircuitBreaker circuito) {
         return new ProveedorTarifasClientReactivo(
-                new ProveedorLogisticoConfig().webClientProveedor(props),
+                new ProveedorLogisticoConfig().webClientProveedor(props, ObservationRegistry.NOOP),
                 props, circuito,
                 RateLimiter.ofDefaults("prueba"),
                 Bulkhead.ofDefaults("prueba"),

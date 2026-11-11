@@ -6,6 +6,9 @@ server:
   shutdown: graceful
 
 spring:
+  # Propaga el contexto de traza (y el MDC) a traves de los operadores de Reactor.
+  reactor:
+    context-propagation: auto
   application:
     name: pedidos-gateway
   main:
@@ -115,16 +118,41 @@ resilience4j:
         timeout-duration: 0
 
 management:
+  # --- Observabilidad -------------------------------------------------------
+  # Trazas distribuidas: Micrometer Tracing (Brave) crea un span por peticion y por
+  # llamada saliente, propaga el contexto en cabeceras W3C (traceparent) y exporta los
+  # spans a Zipkin. El X-Correlation-Id viaja como "baggage" y entra en el MDC del log.
+  tracing:
+    sampling:
+      probability: ${TRACING_PROBABILIDAD:1.0}
+    baggage:
+      remote-fields: X-Correlation-Id
+      correlation:
+        fields: X-Correlation-Id
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+  # Metricas: etiqueta comun para distinguir servicios en Prometheus, e histograma de
+  # latencias HTTP (permite calcular p95/p99 con histogram_quantile).
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
         enabled: true
 
 logging:
+  # traceId, spanId y X-Correlation-Id en cada linea (Boot lo anade con %correlationId).
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-},%X{X-Correlation-Id:-}] "
   level:
     root: INFO
     com.bdo.pedidos: INFO

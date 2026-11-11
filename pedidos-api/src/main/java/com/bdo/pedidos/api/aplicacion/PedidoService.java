@@ -187,9 +187,15 @@ public class PedidoService {
      * cliente HTTP cierra la conexion a mitad de la llamada al proveedor). Sin esto, la
      * cancelacion cortaria el flujo despues de tomar el pedido y antes de persistir el
      * resultado, y el pedido se quedaria en CONFIRMANDO hasta que expirase el lease.
+     *
+     * <p>{@code toFuture()} suscribe la operacion por separado, sin el Contexto de Reactor de
+     * la peticion: se le vuelve a escribir, porque ahi viajan la traza (la llamada al
+     * proveedor debe ser un span hijo de la confirmacion, no una traza nueva) y la
+     * correlacion.
      */
     private static <T> Mono<T> sinCancelacion(Mono<T> operacion) {
-        return Mono.fromFuture(operacion::toFuture, true);
+        return Mono.deferContextual(contexto ->
+                Mono.fromFuture(() -> operacion.contextWrite(contexto).toFuture(), true));
     }
 
     private Mono<Pedido> confirmarConTarifa(Pedido pedido, ResultadoTarifa resultado) {

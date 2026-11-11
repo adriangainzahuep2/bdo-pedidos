@@ -47,6 +47,20 @@ resilience4j-reactor = { module = "io.github.resilience4j:resilience4j-reactor" 
 # Filtro CircuitBreaker de Spring Cloud Gateway (Spring Cloud CircuitBreaker sobre Resilience4j).
 spring-cloud-starter-circuitbreaker-reactor-resilience4j = { module = "org.springframework.cloud:spring-cloud-starter-circuitbreaker-reactor-resilience4j" }
 
+# --- Observabilidad (versiones del BOM de Spring Boot) -----------------------
+# Trazas: Micrometer Tracing con Brave, exportadas a Zipkin.
+micrometer-tracing-bridge-brave = { module = "io.micrometer:micrometer-tracing-bridge-brave" }
+zipkin-reporter-brave = { module = "io.zipkin.reporter2:zipkin-reporter-brave" }
+# Metricas en formato Prometheus (/actuator/prometheus).
+micrometer-registry-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
+# Metricas de los circuitos, reintentos y limitadores de Resilience4j.
+resilience4j-micrometer = { module = "io.github.resilience4j:resilience4j-micrometer" }
+
+# --- Mensajeria (versiones del BOM de Spring Cloud) ---------------------------
+# Spring Cloud Stream con el binder de RabbitMQ, y el binder de test en memoria.
+spring-cloud-starter-stream-rabbit = { module = "org.springframework.cloud:spring-cloud-starter-stream-rabbit" }
+spring-cloud-stream-test-binder = { module = "org.springframework.cloud:spring-cloud-stream-test-binder" }
+
 # --- Seguridad ---------------------------------------------------------------
 spring-security-oauth2-jose = { module = "org.springframework.security:spring-security-oauth2-jose" }
 spring-security-test = { module = "org.springframework.security:spring-security-test" }

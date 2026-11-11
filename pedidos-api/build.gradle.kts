@@ -26,6 +26,14 @@ dependencies {
     implementation(libs.spring.boot.starter.oauth2.resource.server)
     implementation(libs.spring.boot.starter.validation)
     implementation(libs.spring.boot.starter.actuator)
+    // Observabilidad: trazas distribuidas (Micrometer Tracing + Brave -> Zipkin) y
+    // metricas en formato Prometheus.
+    implementation(libs.micrometer.tracing.bridge.brave)
+    implementation(libs.zipkin.reporter.brave)
+    runtimeOnly(libs.micrometer.registry.prometheus)
+    // Eventos asincronos entre servicios: Spring Cloud Stream sobre RabbitMQ.
+    implementation(libs.spring.cloud.starter.stream.rabbit)
+    implementation(libs.resilience4j.micrometer)
 
     // Descubrimiento de servicios y balanceo de carga (Netflix OSS -> Spring Cloud).
     implementation(libs.spring.cloud.starter.loadbalancer)
@@ -41,6 +49,7 @@ dependencies {
     runtimeOnly(libs.r2dbc.postgresql)
 
     testImplementation(libs.spring.boot.starter.test)
+    testImplementation(libs.spring.cloud.stream.test.binder)
     testImplementation(libs.reactor.test)
     testImplementation(libs.spring.security.test)
     testImplementation(libs.wiremock.standalone)

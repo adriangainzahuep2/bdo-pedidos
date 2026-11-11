@@ -13,6 +13,9 @@ server:
     include-stacktrace: never
 
 spring:
+  # Propaga el contexto de traza (y el MDC) a traves de los operadores de Reactor.
+  reactor:
+    context-propagation: auto
   application:
     name: pedidos-api
   main:
@@ -50,10 +53,23 @@ spring:
           issuer-uri: ${AUTH_ISSUER_URI:http://localhost:9000}
           jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:9000/oauth2/jwks}
 
-  # --- Descubrimiento de servicios ------------------------------------------
+  # --- Descubrimiento de servicios y mensajeria ------------------------------
   cloud:
     discovery:
       enabled: false
+    # --- Mensajeria asincrona (Spring Cloud Stream) ----------------------------
+    # El binding de salida "pedidoConfirmado-out-0" (lo usa StreamBridge) se enlaza con el
+    # destino "pedidos.confirmados": en RabbitMQ, un exchange de tipo topic. El codigo solo
+    # conoce el nombre del binding; el broker lo decide el binder.
+    stream:
+      bindings:
+        pedidoConfirmado-out-0:
+          destination: pedidos.confirmados
+          content-type: application/json
+      # Este servicio solo publica: que Spring Cloud Function no convierta en bindings
+      # los beans de tipo Function/Supplier/Consumer que haya en el contexto.
+      function:
+        autodetect: false
 
 # -----------------------------------------------------------------------------
 # Configuracion propia de la aplicacion
@@ -83,6 +99,11 @@ app:
     confirmaciones:
       lease-ms: 120000
       intervalo-ms: 60000
+
+  # Eventos de dominio (PedidoConfirmado) hacia el broker. Desactivados por defecto: los
+  # activa el perfil "eventos" (stack de Docker con RabbitMQ). Ver EventosConfig.
+  eventos:
+    habilitados: false
 
 # -----------------------------------------------------------------------------
 # Resiliencia (Resilience4j)
@@ -130,10 +151,32 @@ resilience4j:
 # Observabilidad
 # -----------------------------------------------------------------------------
 management:
+  # --- Observabilidad -------------------------------------------------------
+  # Trazas distribuidas: Micrometer Tracing (Brave) crea un span por peticion y por
+  # llamada saliente, propaga el contexto en cabeceras W3C (traceparent) y exporta los
+  # spans a Zipkin. El X-Correlation-Id viaja como "baggage" y entra en el MDC del log.
+  tracing:
+    sampling:
+      probability: ${TRACING_PROBABILIDAD:1.0}
+    baggage:
+      remote-fields: X-Correlation-Id
+      correlation:
+        fields: X-Correlation-Id
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+  # Metricas: etiqueta comun para distinguir servicios en Prometheus, e histograma de
+  # latencias HTTP (permite calcular p95/p99 con histogram_quantile).
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
@@ -142,14 +185,23 @@ management:
   health:
     r2dbc:
       enabled: true
+    # La publicacion de eventos es de mejor esfuerzo: si RabbitMQ cae, los pedidos se
+    # siguen confirmando, asi que el broker no debe poner el servicio en DOWN.
+    rabbit:
+      enabled: false
+    binders:
+      enabled: false
 
 logging:
+  # traceId, spanId y X-Correlation-Id en cada linea, desde el MDC que rellena Micrometer
+  # Tracing. Este servicio tiene patron de consola propio, asi que los campos van en el:
+  # logging.pattern.correlation solo lo usa el patron por defecto de Spring Boot.
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [pedidos-api,%X{traceId:-},%X{spanId:-},%X{X-Correlation-Id:-}] [%thread] %logger{36} - %msg%n"
   level:
     root: INFO
     com.bdo.pedidos: INFO
     org.springframework.r2dbc.core: INFO
-  pattern:
-    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
 
 ---
 # =============================================================================
@@ -198,3 +250,21 @@ eureka:
     instance-id: ${spring.application.name}:${random.value}
   server:
     wait-time-in-ms-when-sync-empty: 0
+
+---
+# =============================================================================
+# Perfil eventos: publica PedidoConfirmado en RabbitMQ (stack de Docker)
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: eventos
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USUARIO:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+app:
+  eventos:
+    habilitados: true

@@ -4,6 +4,9 @@ server:
   shutdown: graceful
 
 spring:
+  # Propaga el contexto de traza (y el MDC) a traves de los operadores de Reactor.
+  reactor:
+    context-propagation: auto
   application:
     name: pedidos-cliente
   main:
@@ -31,18 +34,77 @@ spring:
   cloud:
     discovery:
       enabled: false
+    # --- Mensajeria asincrona (Spring Cloud Stream) ----------------------------
+    # El consumidor "pedidoConfirmado" (ConsumidorEventosConfig) se enlaza con el binding
+    # "pedidoConfirmado-in-0": destino "pedidos.confirmados" (el exchange en el que publica
+    # pedidos-api) y grupo "pedidos-cliente" (una cola duradera propia de este servicio).
+    stream:
+      bindings:
+        pedidoConfirmado-in-0:
+          destination: pedidos.confirmados
+          group: pedidos-cliente
+          content-type: application/json
+          consumer:
+            # 3 intentos con espera exponencial (0,5 s, 1 s) antes de rendirse.
+            max-attempts: 3
+            back-off-initial-interval: 500
+            back-off-multiplier: 2.0
+      rabbit:
+        bindings:
+          pedidoConfirmado-in-0:
+            consumer:
+              # Agotados los intentos, el mensaje va a la cola de mensajes muertos
+              # pedidos.confirmados.pedidos-cliente.dlq (no se pierde ni bloquea la cola).
+              auto-bind-dlq: true
+              republish-to-dlq: true
+      # Solo se enlaza el consumidor que nombra el perfil "eventos"
+      # (spring.cloud.function.definition): sin el, este servicio no se conecta al broker.
+      function:
+        autodetect: false
 
 management:
+  health:
+    # El broker no pone el servicio en DOWN: la API de clientes funciona sin el, y los
+    # eventos esperan en la cola duradera hasta que vuelva.
+    rabbit:
+      enabled: false
+    binders:
+      enabled: false
+  # --- Observabilidad -------------------------------------------------------
+  # Trazas distribuidas: Micrometer Tracing (Brave) crea un span por peticion y por
+  # llamada saliente, propaga el contexto en cabeceras W3C (traceparent) y exporta los
+  # spans a Zipkin. El X-Correlation-Id viaja como "baggage" y entra en el MDC del log.
+  tracing:
+    sampling:
+      probability: ${TRACING_PROBABILIDAD:1.0}
+    baggage:
+      remote-fields: X-Correlation-Id
+      correlation:
+        fields: X-Correlation-Id
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+  # Metricas: etiqueta comun para distinguir servicios en Prometheus, e histograma de
+  # latencias HTTP (permite calcular p95/p99 con histogram_quantile).
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
         enabled: true
 
 logging:
+  # traceId, spanId y X-Correlation-Id en cada linea (Boot lo anade con %correlationId).
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-},%X{X-Correlation-Id:-}] "
   level:
     root: INFO
     com.bdo.pedidos: INFO
@@ -81,3 +143,24 @@ eureka:
     lease-expiration-duration-in-seconds: 10
     prefer-ip-address: true
     instance-id: ${spring.application.name}:${random.value}
+
+---
+# =============================================================================
+# Perfil eventos: consume PedidoConfirmado de RabbitMQ (stack de Docker)
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: eventos
+  cloud:
+    function:
+      definition: pedidoConfirmado
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USUARIO:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+app:
+  eventos:
+    habilitados: true

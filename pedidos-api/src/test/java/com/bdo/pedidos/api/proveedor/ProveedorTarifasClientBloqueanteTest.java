@@ -1,5 +1,6 @@
 package com.bdo.pedidos.api.proveedor;
 
+import io.micrometer.observation.ObservationRegistry;
 import com.bdo.pedidos.api.config.ProveedorLogisticoConfig;
 import com.bdo.pedidos.api.config.ProveedorLogisticoProperties;
 import com.bdo.pedidos.dominio.error.ProveedorHttpException;
@@ -79,7 +80,7 @@ class ProveedorTarifasClientBloqueanteTest {
 
     private ProveedorTarifasClientBloqueante crearCliente(ProveedorLogisticoProperties props) {
         return new ProveedorTarifasClientBloqueante(
-                new ProveedorLogisticoConfig().restTemplateProveedor(props), props,
+                new ProveedorLogisticoConfig().restTemplateProveedor(props, ObservationRegistry.NOOP), props,
                 CircuitBreaker.ofDefaults("prueba"),
                 RateLimiter.ofDefaults("prueba"),
                 Bulkhead.ofDefaults("prueba"),

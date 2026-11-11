@@ -11,7 +11,9 @@ enunciado: resiliencia ante el proveedor, concurrencia y calidad de los tests.
 > secuencias, y el catálogo de clases y funciones, está en
 > **[docs/ARQUITECTURA.md](docs/ARQUITECTURA.md)**.
 > Los patrones de diseño aplicados (dónde y para qué) están en
-> **[docs/PATRONES.md](docs/PATRONES.md)**.
+> **[docs/PATRONES.md](docs/PATRONES.md)**. La plataforma —circuit breakers, Eureka, eventos
+> asíncronos (Spring Cloud Stream + RabbitMQ), trazas (Zipkin), métricas (Prometheus), Actuator, y
+> por qué no JPA ni OpenFeign— está en **[docs/PLATAFORMA.md](docs/PLATAFORMA.md)**.
 > El detalle razonado de cada decisión (qué, por qué, qué se descartó y cómo se verifica) está en
 > **[docs/DECISIONES.md](docs/DECISIONES.md)**. La salida real de las verificaciones está en
 > **[documentacion/EVIDENCIA.md](documentacion/EVIDENCIA.md)**.
@@ -32,7 +34,7 @@ enunciado: resiliencia ante el proveedor, concurrencia y calidad de los tests.
 ### Tests
 
 ```bash
-./gradlew build                     # compila, 136 tests (unitarios + integracion) y cobertura JaCoCo
+./gradlew build                     # compila, 159 tests (unitarios + integracion) y cobertura JaCoCo
 ./gradlew :pedidos-dominio:test     # solo el dominio (Java puro, segundos)
 ./gradlew :pedidos-api:testJavaScript   # tests de JavaScript de la consola (node --test)
 ./scripts/probar-postgresql.sh      # esquema PostgreSQL + 10 filas por tabla + verificacion (PostgreSQL real)
@@ -143,6 +145,9 @@ gateway) y el resto de servicios, en estos puertos:
 | `pedidos-config` | 8888 | Spring Cloud Config Server |
 | `postgres` | 55432 | PostgreSQL 16 con las bases `pedidos` y `clientes` |
 | `proveedor-logistico` | 8090 | Proveedor logístico simulado |
+| `rabbitmq` | 5672 · 15672 | Broker de eventos (`PedidoConfirmado`) y su consola (guest/guest) |
+| `zipkin` | 9411 | Trazas distribuidas |
+| `prometheus` | 9090 | Métricas de los servicios |
 
 ```bash
 curl -s http://localhost:8080/actuator/health   # {"status":"UP"}
@@ -230,12 +235,14 @@ vector del RFC 7636 (`node --test`).
 
 | Pieza | Puerto | Qué hace |
 |---|---|---|
-| **Gateway** (`pedidos-gateway`) | 8080 | Puerta única: valida el JWT, limita las peticiones (429), genera y propaga `X-Correlation-Id`, enruta cada ruta y publica la consola web |
+| **Gateway** (`pedidos-gateway`) | 8080 | Puerta única: valida el JWT, limita las peticiones (429), un circuit breaker por microservicio (503/504 en `ProblemDetail`), genera y propaga `X-Correlation-Id`, enruta cada ruta y publica la consola web |
 | **Servidor de autorización** (`pedidos-auth`) | 9000 | OAuth2/JWT: `client_credentials` para los servicios y `authorization_code` + PKCE para la consola. Firma con una clave RSA que publica en `/oauth2/jwks` |
 | **Registro** (`pedidos-registry`) | 8761 | Eureka: cada servicio se da de alta con su host y puerto y el resto lo descubre. Sin IP fija ni direcciones fijas en el código |
 | **Config Server** (`pedidos-config`) | 8888 | Configuración compartida y **cifrada con JCE** (`{cipher}`). Con `CONFIG_PROFILE=git` la lee de un repositorio Gitea |
 | **API de pedidos** (`pedidos-api`) | 8081 | Caso de uso: crear pedido, confirmar (consulta al proveedor, guarda el coste de envío y el total) y cancelar |
-| **API de clientes** (`pedidos-cliente`) | 8082 | Alta y consulta de clientes, con su propia base de datos |
+| **API de clientes** (`pedidos-cliente`) | 8082 | Alta y consulta de clientes, con su propia base de datos; consume `PedidoConfirmado` para el resumen de pedidos de cada cliente |
+| **RabbitMQ** | 5672 | Eventos asíncronos (Spring Cloud Stream): `pedidos.confirmados`, con cola por consumidor y DLQ |
+| **Zipkin** · **Prometheus** | 9411 · 9090 | Trazas distribuidas (Micrometer Tracing) y métricas (`/actuator/prometheus`) |
 | **PostgreSQL** | 55432 | Una base por microservicio: `pedidos` y `clientes` |
 | **Proveedor logístico simulado** | 8090 | Sustituye al proveedor real: puede tardar 5 s, devolver 503 intermitentes y exige un token |
 
@@ -281,6 +288,7 @@ con stack bloqueante (Spring MVC + JPA).
 | `POST` | `/api/pedidos/{id}/cancelacion` | `pedidos.write` | `200` + pedido `CANCELADO` |
 | `GET` | `/api/pedidos/{id}` | `pedidos.read` | `200` |
 | `POST`/`GET` | `/api/clientes`, `/api/clientes/{id}` | `clientes.write` / `clientes.read` | servicio de clientes |
+| `GET` | `/api/clientes/{id}/pedidos-confirmados` | `clientes.read` | `200` + número e importe de pedidos confirmados (proyección alimentada por eventos) |
 
 La petición de creación **no tiene ningún campo de importe**: el servidor calcula importe de
 línea, importe de productos, peso, bultos y total. Errores en formato RFC 9457 (`ProblemDetail`):
@@ -378,7 +386,7 @@ H2 en memoria (modo PostgreSQL) para desarrollo y tests; **PostgreSQL** en despl
 * `db/postgresql/datos-prueba.sql`: **10 filas por tabla**, cubriendo todos los estados y
   escenarios (503, timeout, circuito abierto, redondeos HALF_UP).
 * `db/postgresql/verificacion.sql`: comprueba las invariantes de los datos y que las restricciones
-  rechazan 15 tipos de datos incoherentes, además del compare-and-set, la recuperación y el borrado
+  rechazan 18 tipos de datos incoherentes, además del compare-and-set, la recuperación y el borrado
   en cascada.
 * `scripts/probar-postgresql.sh` lo ejecuta todo en un PostgreSQL desechable y comprueba que el
   esquema consolidado y el DDL de cada servicio son idénticos.
@@ -407,7 +415,8 @@ mayor parte del tiempo **esperando** al proveedor.
 | Fuera | Cómo se abordaría |
 |---|---|
 | **Los servicios no importan el Config Server** (existe y cifra con JCE, pero cada servicio usa su `application.yml` + entorno) | `spring-cloud-starter-config` + `spring.config.import=optional:configserver:` y el token como `{cipher}` |
-| **Correlación en los logs** (la cabecera se propaga, pero no está en el MDC) | Micrometer Context Propagation (`Hooks.enableAutomaticContextPropagation`) o Micrometer Tracing con OTLP |
+| **Publicación de eventos con garantía** (hoy es de mejor esfuerzo: con RabbitMQ caído, el pedido se confirma y el evento se pierde, contado en una métrica) | Patrón outbox: el evento en una tabla, en la misma transacción que la confirmación ([docs/PLATAFORMA.md](docs/PLATAFORMA.md) §4.6) |
+| **Paneles y alertas** (las métricas están en Prometheus, sin Grafana ni reglas) | Grafana con p99 de la confirmación, circuitos abiertos y eventos fallidos; Alertmanager |
 | **Idempotency-Key** en `POST /api/pedidos` (un reintento del cliente crea otro pedido) | Cabecera `Idempotency-Key` + tabla de claves con TTL |
 | **Migraciones versionadas** (el DDL se aplica al crear la base de datos) | Flyway con `db/postgresql/esquema.sql` como `V1` |
 | **Tests de integración Java sobre PostgreSQL** (el SQL se prueba con scripts y en el E2E) | Testcontainers en CI (requiere Docker en el agente) |

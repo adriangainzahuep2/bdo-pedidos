@@ -1,6 +1,7 @@
 package com.bdo.pedidos.api.aplicacion;
 
 import com.bdo.pedidos.dominio.error.ClienteNoEncontradoException;
+import com.bdo.pedidos.dominio.evento.PedidoConfirmado;
 import com.bdo.pedidos.dominio.error.ConfirmacionEnCursoException;
 import com.bdo.pedidos.dominio.error.PedidoNoEncontradoException;
 import com.bdo.pedidos.dominio.error.ProveedorHttpException;
@@ -14,6 +15,7 @@ import com.bdo.pedidos.dominio.modelo.Pedido;
 import com.bdo.pedidos.dominio.modelo.ResultadoTarifa;
 import com.bdo.pedidos.dominio.modelo.SolicitudTarifa;
 import com.bdo.pedidos.dominio.puerto.ClientePort;
+import com.bdo.pedidos.dominio.puerto.EventosPedidoPort;
 import com.bdo.pedidos.dominio.puerto.PedidoRepositoryPort;
 import com.bdo.pedidos.dominio.puerto.ProveedorTarifasPort;
 import org.slf4j.Logger;
@@ -62,17 +64,20 @@ public class PedidoService {
     private final PedidoRepositoryPort pedidos;
     private final ClientePort clientes;
     private final ProveedorTarifasPort proveedor;
+    private final EventosPedidoPort eventos;
     private final TransactionalOperator tx;
     private final Clock clock;
 
     public PedidoService(PedidoRepositoryPort pedidos,
                          ClientePort clientes,
                          ProveedorTarifasPort proveedor,
+                         EventosPedidoPort eventos,
                          TransactionalOperator tx,
                          Clock clock) {
         this.pedidos = pedidos;
         this.clientes = clientes;
         this.proveedor = proveedor;
+        this.eventos = eventos;
         this.tx = tx;
         this.clock = clock;
     }
@@ -178,7 +183,10 @@ public class PedidoService {
                     .switchIfEmpty(Mono.error(() -> new ProveedorRespuestaInvalidaException(
                             "El proveedor logistico no ha devuelto ninguna tarifa")))
                     .flatMap(resultado -> confirmarConTarifa(pedido, resultado))
-                    .onErrorResume(error -> revertirYPropagar(pedido, error, (System.nanoTime() - inicio) / 1_000_000L));
+                    .onErrorResume(error -> revertirYPropagar(pedido, error, (System.nanoTime() - inicio) / 1_000_000L))
+                    // Fase 4: aviso asincrono, ya con la confirmacion persistida (fuera de la
+                    // transaccion y despues de la reversion: publicar nunca deshace un pedido).
+                    .flatMap(confirmado -> eventos.publicar(PedidoConfirmado.de(confirmado)).thenReturn(confirmado));
         });
     }
 
@@ -187,9 +195,15 @@ public class PedidoService {
      * cliente HTTP cierra la conexion a mitad de la llamada al proveedor). Sin esto, la
      * cancelacion cortaria el flujo despues de tomar el pedido y antes de persistir el
      * resultado, y el pedido se quedaria en CONFIRMANDO hasta que expirase el lease.
+     *
+     * <p>{@code toFuture()} suscribe la operacion por separado, sin el Contexto de Reactor de
+     * la peticion: se le vuelve a escribir, porque ahi viajan la traza (la llamada al
+     * proveedor debe ser un span hijo de la confirmacion, no una traza nueva) y la
+     * correlacion.
      */
     private static <T> Mono<T> sinCancelacion(Mono<T> operacion) {
-        return Mono.fromFuture(operacion::toFuture, true);
+        return Mono.deferContextual(contexto ->
+                Mono.fromFuture(() -> operacion.contextWrite(contexto).toFuture(), true));
     }
 
     private Mono<Pedido> confirmarConTarifa(Pedido pedido, ResultadoTarifa resultado) {

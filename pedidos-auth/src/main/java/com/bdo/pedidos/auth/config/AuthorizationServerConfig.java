@@ -113,6 +113,9 @@ public class AuthorizationServerConfig {
                         // servidor de autorizacion responderia 302 y el contenedor quedaria
                         // "unhealthy" pese a estar arrancado.
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        // Metricas para Prometheus (sin datos de negocio). En produccion, en un
+                        // puerto de gestion propio solo accesible desde la red interna.
+                        .requestMatchers("/actuator/prometheus").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
                 // La peticion previa de CORS (OPTIONS /oauth2/token) no la atiende la cadena

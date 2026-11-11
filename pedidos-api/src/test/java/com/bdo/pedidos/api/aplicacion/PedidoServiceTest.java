@@ -7,6 +7,7 @@ import com.bdo.pedidos.dominio.error.ProveedorHttpException;
 import com.bdo.pedidos.dominio.error.ProveedorNoDisponibleException;
 import com.bdo.pedidos.dominio.error.ProveedorRespuestaInvalidaException;
 import com.bdo.pedidos.dominio.error.TransicionDeEstadoInvalidaException;
+import com.bdo.pedidos.dominio.evento.PedidoConfirmado;
 import com.bdo.pedidos.dominio.modelo.Cliente;
 import com.bdo.pedidos.dominio.modelo.Dinero;
 import com.bdo.pedidos.dominio.modelo.EstadoPedido;
@@ -36,6 +37,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -68,6 +70,9 @@ class PedidoServiceTest {
     @Mock
     private TransactionalOperator tx;
 
+    /** Publicador de eventos falso: registra lo que se publica. */
+    private final List<PedidoConfirmado> eventosPublicados = new CopyOnWriteArrayList<>();
+
     private PedidoService servicio;
 
     @BeforeEach
@@ -75,7 +80,9 @@ class PedidoServiceTest {
         org.mockito.Mockito.lenient()
                 .when(tx.transactional(org.mockito.ArgumentMatchers.<Mono<Pedido>>any()))
                 .thenAnswer(invocacion -> invocacion.getArgument(0));
-        servicio = new PedidoService(pedidos, clientes, proveedor, tx, Clock.fixed(AHORA, ZoneOffset.UTC));
+        servicio = new PedidoService(pedidos, clientes, proveedor,
+                evento -> Mono.fromRunnable(() -> eventosPublicados.add(evento)),
+                tx, Clock.fixed(AHORA, ZoneOffset.UTC));
     }
 
     /**
@@ -190,6 +197,14 @@ class PedidoServiceTest {
         ArgumentCaptor<IntentoConfirmacion> intento = ArgumentCaptor.forClass(IntentoConfirmacion.class);
         verify(pedidos).registrarIntento(intento.capture());
         assertThat(intento.getValue().resultado()).isEqualTo(IntentoConfirmacion.Resultado.OK);
+
+        // Tras persistir, un unico evento PedidoConfirmado con los importes confirmados.
+        assertThat(eventosPublicados).singleElement().satisfies(evento -> {
+            assertThat(evento.pedidoId()).isEqualTo(1L);
+            assertThat(evento.clienteId()).isEqualTo(7L);
+            assertThat(evento.importeTotal().toPlainString()).isEqualTo("99.93");
+            assertThat(evento.costeEnvio().toPlainString()).isEqualTo("7.95");
+        });
     }
 
     @Test
@@ -234,6 +249,8 @@ class PedidoServiceTest {
 
         verify(proveedor, never()).calcularTarifa(any());
         verify(pedidos, never()).actualizarSiEstadoEs(anyLong(), anyLong(), any(), any());
+        // La confirmacion idempotente no vuelve a anunciar el pedido.
+        assertThat(eventosPublicados).isEmpty();
     }
 
     @Test
@@ -274,6 +291,8 @@ class PedidoServiceTest {
         assertThat(intento.getValue().resultado()).isEqualTo(IntentoConfirmacion.Resultado.ERROR);
         assertThat(intento.getValue().codigoError()).isEqualTo("HTTP_503");
         assertThat(intento.getValue().intentosProveedor()).isEqualTo(3);
+        // Un pedido que no se ha confirmado no se anuncia.
+        assertThat(eventosPublicados).isEmpty();
     }
 
     @Test

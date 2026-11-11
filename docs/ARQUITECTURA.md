@@ -83,7 +83,7 @@ flowchart TB
     end
 
     subgraph borde["Borde"]
-        gateway["pedidos-gateway :8080<br/>Spring Cloud Gateway<br/>JWT · 429 · X-Correlation-Id"]
+        gateway["pedidos-gateway :8080<br/>Spring Cloud Gateway<br/>JWT · 429 · X-Correlation-Id<br/>circuito por microservicio"]
     end
 
     subgraph negocio["Servicios de negocio (WebFlux + R2DBC)"]
@@ -92,7 +92,13 @@ flowchart TB
     end
 
     bdPedidos[("BD pedidos<br/>pedido · pedido_linea ·<br/>pedido_confirmacion_intento")]
-    bdClientes[("BD clientes<br/>cliente")]
+    bdClientes[("BD clientes<br/>cliente ·<br/>cliente_pedido_confirmado")]
+    rabbit[["RabbitMQ :5672<br/>exchange pedidos.confirmados<br/>cola pedidos-cliente + DLQ"]]
+
+    subgraph observabilidad["Observabilidad"]
+        zipkin["Zipkin :9411<br/>trazas"]
+        prometheus["Prometheus :9090<br/>métricas"]
+    end
     proveedor[("Proveedor logístico :8090<br/>(simulado: scripts/mock-proveedor.py)")]
 
     cliente -- "1. client_credentials" --> auth
@@ -109,7 +115,14 @@ flowchart TB
     api -- "5. POST /api/tarifas (Bearer)" --> proveedor
     api --- bdPedidos
     clientes --- bdClientes
+    api -- "6. PedidoConfirmado (asíncrono)" --> rabbit
+    rabbit -- "7. consumo (grupo pedidos-cliente)" --> clientes
+    gateway & api & clientes & auth -. "spans" .-> zipkin
+    prometheus -. "GET /actuator/prometheus" .-> gateway & api & clientes & auth
 ```
+
+> El detalle de la resiliencia, la mensajería, la observabilidad y Actuator, y por qué no se usan
+> JPA ni OpenFeign, está en [PLATAFORMA.md](PLATAFORMA.md).
 
 ### 2.3 Puertos y datos de cada servicio
 

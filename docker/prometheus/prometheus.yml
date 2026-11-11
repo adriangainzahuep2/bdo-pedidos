@@ -1,0 +1,19 @@
+# =============================================================================
+# Prometheus: recoge las metricas de los microservicios (/actuator/prometheus).
+#
+# Los servicios estan en la red "bdo" del compose y se alcanzan por su nombre.
+# Cada serie lleva la etiqueta application=<servicio> (management.metrics.tags).
+# =============================================================================
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: pedidos
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - pedidos-gateway:8080
+          - pedidos-api:8080
+          - pedidos-cliente:8080
+          - pedidos-auth:9000

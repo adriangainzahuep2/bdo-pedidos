@@ -25,7 +25,7 @@ Requisitos: **JDK 17** (se compila con `--release 17`), Python 3, Node.js 18+ pa
 consola y Docker para el stack completo. Gradle va incluido (`./gradlew`).
 
 ```bash
-./gradlew build                     # compila, 159 tests (unitarios + integración) y cobertura JaCoCo
+./gradlew build                     # compila, 160 tests (unitarios + integración) y cobertura JaCoCo
 ./scripts/verificar-e2e.sh          # stack completo y escenarios del enunciado a través del gateway
 
 cp .env.example .env                # secretos (no están en el repositorio): rellenarlos

@@ -95,6 +95,18 @@ class GatewayCircuitBreakerTest {
     }
 
     @Test
+    @DisplayName("una escritura (POST) a un microservicio caido tambien recibe el 503 ProblemDetail")
+    void escrituraAMicroservicioCaido() {
+        webTestClient.post().uri("/api/clientes").header("Authorization", "Bearer " + TokenDePrueba.token("clientes.write"))
+                .header("Content-Type", "application/json")
+                .bodyValue("{\"nombre\":\"X\",\"email\":\"x@example.com\"}")
+                .exchange()
+                .expectStatus().isEqualTo(503)
+                .expectBody()
+                .jsonPath("$.type").isEqualTo("https://bdo.example/problemas/microservicio-no-disponible");
+    }
+
+    @Test
     @DisplayName("tras varios fallos el circuito se abre; el de la otra ruta sigue cerrado y enrutando")
     void elCircuitoSeAbreSoloParaSuRuta() {
         for (int i = 0; i < 4; i++) {

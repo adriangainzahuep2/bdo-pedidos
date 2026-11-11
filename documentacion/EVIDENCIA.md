@@ -17,7 +17,7 @@ La verificación de Docker (§4) se ha ejecutado además con **Java 17** dentro 
 
 ```
 BUILD SUCCESSFUL
-159 tests, 0 fallos, 0 errores, 0 omitidos
+160 tests, 0 fallos, 0 errores, 0 omitidos
 ```
 
 | Módulo | Suite | Tests | Fallos | Omitidos |
@@ -49,7 +49,7 @@ BUILD SUCCESSFUL
 | `pedidos-auth` | Servidor de autorizacion - client_credentials, authorization_code + PKCE y CORS | 9 | 0 | 0 |
 | `pedidos-cliente` | Eventos - consumo de PedidoConfirmado y resumen por cliente | 4 | 0 | 0 |
 | `pedidos-cliente` | API de clientes - alta, consulta y control de acceso | 6 | 0 | 0 |
-| `pedidos-gateway` | API Gateway - circuit breaker por microservicio | 6 | 0 | 0 |
+| `pedidos-gateway` | API Gateway - circuit breaker por microservicio | 7 | 0 | 0 |
 | `pedidos-gateway` | API Gateway - autenticacion, correlacion y enrutado | 6 | 0 | 0 |
 | `pedidos-gateway` | API Gateway - limite de peticiones | 1 | 0 | 0 |
 | `pedidos-gateway` | API Gateway - trazas distribuidas y metricas | 2 | 0 | 0 |

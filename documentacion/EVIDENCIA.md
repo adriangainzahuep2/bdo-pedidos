@@ -17,12 +17,13 @@ La verificación de Docker (§4) se ha ejecutado además con **Java 17** dentro 
 
 ```
 BUILD SUCCESSFUL
-136 tests, 0 fallos, 0 errores, 0 omitidos
+159 tests, 0 fallos, 0 errores, 0 omitidos
 ```
 
 | Módulo | Suite | Tests | Fallos | Omitidos |
 |---|---|---:|---:|---:|
 | `pedidos-dominio` | Excepciones tipadas del dominio | 5 | 0 | 0 |
+| `pedidos-dominio` | PedidoConfirmado - evento de dominio | 2 | 0 | 0 |
 | `pedidos-dominio` | EstadoPedido - maquina de estados del pedido | 5 | 0 | 0 |
 | `pedidos-dominio` | Pedido - agregado raiz y sus invariantes | 6 | 0 | 0 |
 | `pedidos-dominio` | Cliente | 2 | 0 | 0 |
@@ -36,16 +37,22 @@ BUILD SUCCESSFUL
 | `pedidos-dominio` | CalculadoraTotalPedido - calculo unitario del total | 5 | 0 | 0 |
 | `pedidos-api` | PedidoService - orquestacion del caso de uso | 13 | 0 | 0 |
 | `pedidos-api` | ClienteServiceClient - integracion con el servicio de clientes simulado | 4 | 0 | 0 |
+| `pedidos-api` | Eventos - publicacion de PedidoConfirmado con Spring Cloud Stream | 2 | 0 | 0 |
+| `pedidos-api` | PublicadorEventosStream - publicacion de mejor esfuerzo | 3 | 0 | 0 |
 | `pedidos-api` | PedidoRepository - persistencia y transiciones atomicas | 5 | 0 | 0 |
 | `pedidos-api` | ProveedorTarifasClientBloqueante - integracion contra el proveedor simulado | 6 | 0 | 0 |
 | `pedidos-api` | ProveedorTarifasClientReactivo - integracion contra el proveedor simulado | 16 | 0 | 0 |
+| `pedidos-api` | Observabilidad - trazas distribuidas, correlacion en logs y metricas Prometheus | 4 | 0 | 0 |
 | `pedidos-api` | API de pedidos - adaptador bloqueante (RestTemplate) | 2 | 0 | 0 |
 | `pedidos-api` | API de pedidos - flujo completo con proveedor simulado | 17 | 0 | 0 |
 | `pedidos-api` | API de pedidos - timeout del proveedor | 1 | 0 | 0 |
-| `pedidos-auth` | AuthorizationServerIntegrationTest - authorization_code + PKCE del cliente publico | 9 | 0 | 0 |
+| `pedidos-auth` | Servidor de autorizacion - client_credentials, authorization_code + PKCE y CORS | 9 | 0 | 0 |
+| `pedidos-cliente` | Eventos - consumo de PedidoConfirmado y resumen por cliente | 4 | 0 | 0 |
 | `pedidos-cliente` | API de clientes - alta, consulta y control de acceso | 6 | 0 | 0 |
-| `pedidos-gateway` | API Gateway - autenticacion, correlacion, enrutado y consola web | 6 | 0 | 0 |
+| `pedidos-gateway` | API Gateway - circuit breaker por microservicio | 6 | 0 | 0 |
+| `pedidos-gateway` | API Gateway - autenticacion, correlacion y enrutado | 6 | 0 | 0 |
 | `pedidos-gateway` | API Gateway - limite de peticiones | 1 | 0 | 0 |
+| `pedidos-gateway` | API Gateway - trazas distribuidas y metricas | 2 | 0 | 0 |
 
 Los tests que pide el enunciado:
 
@@ -58,10 +65,11 @@ Los tests que pide el enunciado:
 
 | Módulo | Líneas | Ramas | Instrucciones |
 |---|---:|---:|---:|
-| `pedidos-dominio` | 85,4 % | 67,3 % | 83,1 % |
-| `pedidos-api` | 91,6 % | 70,6 % | 91,2 % |
-| `pedidos-cliente` | 97,6 % | 50,0 % | 97,8 % |
-| `pedidos-gateway` | 93,9 % | 83,3 % | 96,7 % |
+| `pedidos-dominio` | 88,1 % | 67,7 % | 85,2 % |
+| `pedidos-api` | 92,4 % | 75,5 % | 92,6 % |
+| `pedidos-cliente` | 98,6 % | 70,0 % | 98,6 % |
+| `pedidos-gateway` | 95,2 % | 80,0 % | 97,4 % |
+| `pedidos-auth` | 95,0 % | 80,0 % | 95,3 % |
 
 Informes: `pedidos-*/build/reports/jacoco/test/jacoco.xml` (el que consume Sonar) y
 `pedidos-*/build/reports/jacoco/test/html/`.
@@ -457,4 +465,172 @@ cero, las seis imágenes tardan unos 25 minutos (de ahí el timeout de 90).
 | Req. 2: dos confirmaciones simultáneas | Compare-and-set en base de datos | `dosConfirmacionesSimultaneas`, `diezConfirmacionesSimultaneas`, E2E y `verificacion.sql` |
 | Req. 3: precisión decimal | `BigDecimal`, HALF_UP por línea, `NUMERIC` y `CHECK` | `CalculadoraTotalPedidoTest`, `verificacion.sql` |
 | Req. 4: test unitario del total + integración con error/timeout | `CalculadoraTotalPedidoTest` + suites con WireMock | `./gradlew build` |
+
+---
+
+## 6. Plataforma: resiliencia, eventos asíncronos y observabilidad
+
+Verificado el 11 de noviembre de 2026 contra el stack real de `docker compose up` (once
+contenedores *healthy*: los seis servicios, PostgreSQL, RabbitMQ, Zipkin, Prometheus y el
+proveedor simulado). Qué es cada pieza y cómo está implementada: [docs/PLATAFORMA.md](../docs/PLATAFORMA.md).
+
+| Qué | Estado |
+|---|---|
+| Evento `PedidoConfirmado` de `pedidos-api` a `pedidos-cliente` por RabbitMQ | **verificado** |
+| Consumidor idempotente (mensaje repetido a mano en el broker) | **verificado** |
+| Traza única gateway → pedidos-api → proveedor → RabbitMQ → pedidos-cliente en Zipkin | **verificado** |
+| `traceId` y `X-Correlation-Id` iguales en los logs de los dos servicios | **verificado** |
+| Prometheus recoge los 4 servicios; circuitos, eventos y p99 consultables | **verificado** |
+| Circuito del gateway: cerrado → abierto → semiabierto → cerrado, solo en su ruta | **verificado** |
+| Consumidor parado: los eventos esperan en la cola y se procesan al volver | **verificado** |
+| Broker parado: la confirmación responde 200, el fallo se cuenta y la salud sigue `UP` | **verificado** |
+| Mensaje imposible de procesar: reintentos y cola de mensajes muertos | **verificado** |
+
+### 6.1 Flujo y evento asíncrono
+
+```
+cliente creado: 3
+pedido creado: 3
+confirmacion: CONFIRMADO coste 8.39 total 100.37
+X-Correlation-Id: evidencia-plataforma-1
+
+GET /api/clientes/3/pedidos-confirmados -> {"clienteId":3,"pedidosConfirmados":1,"importeConfirmado":{"EUR":100.37}}
+
+$ rabbitmqctl list_exchanges / list_queues name messages consumers
+pedidos.confirmados                       topic
+pedidos.confirmados.pedidos-cliente       0  1
+pedidos.confirmados.pedidos-cliente.dlq   0  0
+```
+
+Publicación en `pedidos-api` y consumo en `pedidos-cliente`, 43 ms después, con el **mismo
+`traceId` y la misma correlación** (el contexto viaja en las cabeceras del mensaje):
+
+```
+21:05:28.848 INFO  [pedidos-api,6af4d898b35c158e56fc5de55004723e,1b258a245da5ed60,evidencia-plataforma-1] [boundedElastic-4] c.b.p.a.e.PublicadorEventosStream - Evento PedidoConfirmado publicado (pedido 3)
+2026-11-11T21:05:28.891Z  INFO 1 --- [pedidos-cliente] [didos-cliente-1] [pedidos-cliente,6af4d898b35c158e56fc5de55004723e,599486a5b6c11311,evidencia-plataforma-1] c.b.p.c.eventos.ConsumidorEventosConfig  : PedidoConfirmado 3 registrado para el cliente 3 (100.37 EUR)
+```
+
+**Idempotencia**: el mismo evento, publicado otra vez a mano en el exchange (`rabbitmqadmin
+publish`), se ignora y el resumen no cambia:
+
+```
+[pedidos-cliente,6af4d89b168c071fd94500286856d3ea,d94500286856d3ea,] ... PedidoConfirmado 3 repetido: ya estaba registrado, se ignora
+resumen tras la reentrega: {"clienteId":3,"pedidosConfirmados":1,"importeConfirmado":{"EUR":100.37}}
+```
+
+### 6.2 La traza en Zipkin
+
+`GET http://localhost:9411/api/v2/trace/6af4d898b35c158e56fc5de55004723e` (la del log anterior),
+ordenada por inicio y sangrada por span padre:
+
+```
+pedidos-gateway  SERVER   http post                                          564.1 ms
+  pedidos-gateway  LOCAL    security filterchain before                          7.4 ms
+    pedidos-gateway  LOCAL    secured request                                    554.8 ms
+      pedidos-gateway  CLIENT   http post                                          544.6 ms
+        pedidos-api      SERVER   http post /api/pedidos/{id}/confirmacion           527.5 ms
+          pedidos-api      LOCAL    secured request                                    494.3 ms
+              pedidos-api      CLIENT   http post                                           30.8 ms   <- proveedor logistico
+              pedidos-api      LOCAL    stream-bridge process                                5.1 ms
+              pedidos-api      PRODUCER pedidos.confirmados/pedidos.confirmados send         3.8 ms
+                pedidos-cliente  CONSUMER pedidos.confirmados.pedidos-cliente receive         39.7 ms
+                  pedidos-cliente  LOCAL    pedido-confirmado process                           23.2 ms
+16 spans, 3 servicios: ['pedidos-api', 'pedidos-cliente', 'pedidos-gateway']
+```
+
+(Se omiten los spans de `authorize exchange` y `security filterchain after`.) La llamada al
+proveedor es hija de la confirmación: antes del arreglo de `PedidoService.sinCancelacion()`
+empezaba una traza nueva (lo fija `ObservabilidadTest.propagaLaTrazaAlProveedor`).
+
+### 6.3 Métricas en Prometheus
+
+```
+target pedidos-auth:9000 up
+target pedidos-gateway:8080 up
+target pedidos-api:8080 up
+target pedidos-cliente:8080 up
+
+resilience4j_circuitbreaker_state == 1
+  {application: pedidos-api,     name: proveedorLogistico, state: closed}
+  {application: pedidos-api,     name: servicioClientes,   state: closed}
+  {application: pedidos-gateway, name: clientesApi,        state: closed}
+  {application: pedidos-gateway, name: pedidosApi,         state: closed}
+
+histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{uri="/api/pedidos/{id}/confirmacion"}[5m])))
+  0.5149   (p99 de la confirmacion: 515 ms, con el proveedor simulado)
+
+pedidos_eventos_publicados_total  {resultado: ok} = 11   {resultado: error} = 1    (el error: escenario 6.6)
+clientes_eventos_recibidos_total  {resultado: nuevo} = 10                          (desde el reinicio del escenario 6.5)
+```
+
+Familias de Resilience4j y R2DBC expuestas por `pedidos-api`: `resilience4j_circuitbreaker_*`,
+`resilience4j_bulkhead_*`, `resilience4j_ratelimiter_*` y `r2dbc_pool_*`.
+
+### 6.4 Circuito del gateway con `pedidos-cliente` parado
+
+`docker compose stop pedidos-cliente` y 12 peticiones a `/api/clientes/4`:
+
+```
+codigos: 503 503 503 503 503 503 503 503 503 503 503 503
+ultimo cuerpo: {"type":"https://bdo.example/problemas/microservicio-no-disponible","title":"Microservicio no disponible",
+  "status":503,"detail":"El servicio pedidos-cliente no esta disponible (circuito abierto); reintentelo en unos segundos",
+  "instance":"/fallback/pedidos-cliente","servicio":"pedidos-cliente"}
+circuito clientesApi: open | circuito pedidosApi: closed
+```
+
+Con el servicio de vuelta, tras los 15 s abierto pasa a `half_open`, y tres llamadas de prueba
+correctas (`200 200 200`) lo cierran: `state="closed"`.
+
+### 6.5 Desacoplamiento temporal: consumidor parado
+
+Con `pedidos-cliente` parado, confirmar no depende de él:
+
+```
+confirmar 4 -> 200   confirmar 5 -> 200
+pedidos.confirmados.pedidos-cliente.dlq   0  0
+pedidos.confirmados.pedidos-cliente       2  0      <- 2 eventos esperando, 0 consumidores
+```
+
+Al arrancarlo, consume lo pendiente y el resumen queda al día:
+
+```
+pedidos.confirmados.pedidos-cliente       0  1
+... PedidoConfirmado 4 registrado para el cliente 4 ...
+... PedidoConfirmado 5 registrado para el cliente 4 ...
+resumen del cliente: {"clienteId":4,"pedidosConfirmados":2,"importeConfirmado":{"EUR":50.08}}
+```
+
+### 6.6 Broker parado: la confirmación no depende de RabbitMQ
+
+`docker compose stop rabbitmq`:
+
+```
+confirmar 6 con el broker parado -> HTTP 200
+21:07:33.714 WARN  [pedidos-api,6af4d915e921e9d3f50852cb3edca27b,4c4a5638990af5aa,2336e0b8-...] c.b.p.a.e.PublicadorEventosStream - No se pudo publicar PedidoConfirmado del pedido 6: ...
+pedidos_eventos_publicados_total{application="pedidos-api",evento="PedidoConfirmado",resultado="error"} 1.0
+health de pedidos-api: {"status":"UP","groups":["liveness","readiness"]}
+```
+
+Es el límite conocido de la publicación de mejor esfuerzo: el pedido 6 está confirmado pero su
+evento se ha perdido (y queda contado). La solución es el patrón outbox
+([docs/PLATAFORMA.md](../docs/PLATAFORMA.md) §4.6).
+
+### 6.7 Mensaje imposible de procesar: cola de mensajes muertos
+
+Un evento de un cliente que no existe (`clienteId` 999999), publicado a mano en el exchange: la
+clave foránea lo rechaza en cada intento y, agotados, el binder lo aparta:
+
+```
+pedidos.confirmados.pedidos-cliente.dlq   1  0      <- el mensaje, para revisarlo
+pedidos.confirmados.pedidos-cliente       0  1      <- la cola principal sigue procesando
+```
+
+### 6.8 Requisitos del entorno
+
+* El esquema de clientes tiene una tabla nueva (`cliente_pedido_confirmado`). Con un volumen de
+  PostgreSQL anterior, aplicar el DDL (es idempotente) sin borrar datos:
+  `docker compose exec -T postgres psql -U pedidos -d clientes -f /esquemas/clientes.sql`, o bien
+  `docker compose down -v` para inicializarlo desde cero.
+* Las imágenes se reconstruyen desde cero si cambian las dependencias (la capa común del
+  `Dockerfile`).
 

@@ -577,15 +577,18 @@ tiempo fijo.
 
 ## 11. Operación: configuración, observabilidad y CI/CD
 
-* **Configuración centralizada** (Spring Cloud Config, backend `native`) con **cifrado JCE** de
-  los valores sensibles y endpoints `/encrypt` y `/decrypt`. Los servicios aún no la importan
-  (README, "Qué queda fuera").
+* **Configuración centralizada** (Spring Cloud Config, backend `native` o Gitea con
+  `CONFIG_PROFILE=git`) con **cifrado JCE** de los valores sensibles y endpoints `/encrypt` y
+  `/decrypt`. Los servicios aún no la importan (README, "Qué queda fuera").
 * **Correlación de extremo a extremo**: `X-Correlation-Id` generado en el gateway (si el cliente no
-  lo envía), reenviado al microservicio y devuelto en la respuesta. **No** se escribe en el MDC:
-  en WebFlux una petición cambia de hilo y un `ThreadLocal` se quedaría pegado a otras
-  peticiones; llevarlo a los logs requiere Micrometer Context Propagation (mejora documentada).
-* **Métricas**: Actuator expone `health`, `info` y `metrics`; los probes
-  `liveness`/`readiness` están activados para la orquestación.
+  lo envía), reenviado al microservicio y devuelto en la respuesta. Viaja como *baggage* de
+  Micrometer Tracing y entra en el MDC: cada línea de log lleva servicio, `traceId`, `spanId` y
+  correlación. El MDC no se rellena "a mano" (en WebFlux una petición cambia de hilo y un
+  `ThreadLocal` se quedaría pegado a otras peticiones): lo propaga Reactor con
+  `spring.reactor.context-propagation: auto`.
+* **Trazas distribuidas** con Micrometer Tracing (Brave) y **Zipkin**; **métricas** en
+  `/actuator/prometheus` recogidas por **Prometheus**; probes `liveness`/`readiness` para la
+  orquestación. Detalle en [PLATAFORMA.md](PLATAFORMA.md) §5 y §6.
 * **Descubrimiento**: la consola de Eureka en `:8761` muestra las instancias registradas.
 * **CI/CD**: `Jenkinsfile` (pipeline declarativo: compilación → esquema PostgreSQL → tests →
   cobertura → Sonar → empaquetado → imágenes → E2E). La configuración de Sonar está en
@@ -610,6 +613,13 @@ tiempo fijo.
 | Repositorios con SQL explícito | `ReactiveCrudRepository.save()` | H2 no soporta `INSERT ... RETURNING`; además el CAS necesita SQL explícito |
 | Secuencia de base de datos para los ids | `IDENTITY` | `nextval` es portable entre H2 y PostgreSQL y permite conocer el id antes de insertar |
 | Sin idempotency key | Clave de idempotencia | No lo pide el enunciado; documentado como mejora (README §6) |
+| R2DBC con SQL explícito | JPA / Jakarta Persistence (Hibernate, Spring Data JPA) | JPA es bloqueante (bloquearía el *event loop*), detecta el conflicto al hacer *flush* y exige entidades mutables ([PLATAFORMA.md](PLATAFORMA.md) §7) |
+| `WebClient` | OpenFeign | Feign es bloqueante y no admite `Mono`; alternativa declarativa reactiva: HTTP Interfaces de Spring 6 ([PLATAFORMA.md](PLATAFORMA.md) §8) |
+| Circuito del gateway cuenta solo excepciones | Contar también los 5xx del microservicio | Un 502/503 de `pedidos-api` informa de un fallo del proveedor: abriría el circuito de toda la API, también las consultas |
+| Evento asíncrono `PedidoConfirmado` | Que clientes consulte a pedidos por HTTP | Desacoplamiento temporal; el resumen se responde con datos locales (consistencia en diferido) |
+| Publicación de mejor esfuerzo | Patrón outbox | Más piezas; documentado como siguiente paso. Los consumidores ya son idempotentes |
+| RabbitMQ | Kafka | Un evento de bajo volumen con colas por consumidor y DLQ nativas; Kafka compensa con alto volumen o *replay*. Spring Cloud Stream permite cambiar de binder sin tocar el código |
+| Micrometer Tracing + Brave → Zipkin | OpenTelemetry SDK + Jaeger | Integración nativa de Spring Boot 3; el formato `traceparent` es W3C en ambos casos y Zipkin es una sola imagen |
 
 ---
 

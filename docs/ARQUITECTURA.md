@@ -141,6 +141,52 @@ En `docker-compose.yml` cada servicio corre en un contenedor y PostgreSQL tiene 
 
 ---
 
+### 2.4 Las piezas, una a una
+
+| Pieza | Puerto | Qué hace |
+|---|---|---|
+| **Gateway** (`pedidos-gateway`) | 8080 | Puerta única: valida el JWT, limita las peticiones (429), un circuit breaker por microservicio (503/504 en `ProblemDetail`), genera y propaga `X-Correlation-Id`, enruta cada ruta y publica la consola web |
+| **Servidor de autorización** (`pedidos-auth`) | 9000 | OAuth2/JWT: `client_credentials` para los servicios y `authorization_code` + PKCE para la consola. Firma con una clave RSA que publica en `/oauth2/jwks` |
+| **Registro** (`pedidos-registry`) | 8761 | Eureka: cada servicio se da de alta con su host y puerto y el resto lo descubre. Sin IP fija ni direcciones fijas en el código |
+| **Config Server** (`pedidos-config`) | 8888 | Configuración compartida y **cifrada con JCE** (`{cipher}`). Con `CONFIG_PROFILE=git` la lee de un repositorio Gitea |
+| **API de pedidos** (`pedidos-api`) | 8081 | Caso de uso: crear pedido, confirmar (consulta al proveedor, guarda el coste de envío y el total) y cancelar |
+| **API de clientes** (`pedidos-cliente`) | 8082 | Alta y consulta de clientes, con su propia base de datos; consume `PedidoConfirmado` para el resumen de pedidos de cada cliente |
+| **RabbitMQ** | 5672 | Eventos asíncronos (Spring Cloud Stream): `pedidos.confirmados`, con cola por consumidor y DLQ |
+| **Zipkin** · **Prometheus** | 9411 · 9090 | Trazas distribuidas (Micrometer Tracing) y métricas (`/actuator/prometheus`) |
+| **PostgreSQL** | 55432 | Una base por microservicio: `pedidos` y `clientes` |
+| **Proveedor logístico simulado** | 8090 | Sustituye al proveedor real: puede tardar 5 s, devolver 503 intermitentes y exige un token |
+
+**Eureka (descubrimiento de servicios).** No hay direcciones IP escritas en el código: cada
+servicio se registra en Eureka (`@EnableDiscoveryClient`, perfil `eureka`) y los demás lo
+consultan. El `instance-id` lleva un valor aleatorio (`pedidos-api:<uuid>`), así que pueden
+convivir varias instancias del mismo servicio. El registro se refresca cada 5 s y la caché de
+instancias del balanceador dura también 5 s: sin esa alineación, un servicio que se daba de alta
+justo después de una consulta sería invisible durante 35 s y se respondería 503.
+
+**Load balancing.** Las rutas del gateway apuntan a *service ids* (`lb://pedidos-api`,
+`lb://pedidos-cliente`) y el servicio de pedidos llama al de clientes con un `WebClient`
+anotado con `@LoadBalanced`: Spring Cloud LoadBalancer (el sustituto actual de Ribbon en el
+ecosistema Netflix OSS) traduce ese *service id* a una instancia concreta del registro. Con
+varias instancias detrás de la misma dirección, el reparto es de Round Robin. Se puede desactivar
+con `app.clientes.load-balanced=false` (tests y entornos locales).
+
+**Gateway.** Enruta solo las rutas declaradas (`/api/pedidos/**`, `/api/clientes/**` y la
+consola); el *discovery locator* está **desactivado** a propósito, porque crearía una ruta
+automática por cada servicio registrado y expondría servicios internos. Aplica un límite global
+de peticiones que responde **429 sin encolar** (fallo rápido), propaga la correlación
+(`X-Correlation-Id`, generado si no viene) y valida el JWT contra las claves del servidor de
+autorización. Su *timeout* de respuesta (15 s) está por encima del presupuesto global de la
+confirmación (8 s) para que sea el servicio de pedidos quien responde 504.
+
+**RestTemplate.** El proveedor se consume **en modo reactivo** (`WebClient` sobre Netty), porque
+el servicio pasa la mayor parte del tiempo esperando al proveedor y bloquear un hilo del *event
+loop* sería un error de diseño. Existe además un **adaptador bloqueante con `RestTemplate`**
+(`app.proveedor.modo=bloqueante`): delega la llamada en `Schedulers.boundedElastic()`, el pool
+dedicado a E/S bloqueante, y comparte con el reactivo la clasificación de fallos, el circuito, el
+límite, el *bulkhead* y la política de reintentos. Ambos adaptadores tienen **la misma batería de
+tests**, lo que permite comparar las dos aproximaciones y sirve de camino natural para un equipo
+con stack bloqueante (Spring MVC + JPA).
+
 ## 3. Módulos del build
 
 Proyecto Gradle multi-módulo (Java 17). Las versiones viven en `gradle/libs.versions.toml`.

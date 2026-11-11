@@ -6,7 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 
@@ -27,14 +28,27 @@ import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.C
  *
  * <p>Las respuestas 5xx del microservicio NO pasan por aqui: el filtro las deja pasar tal
  * cual (son la forma en que pedidos-api informa de que el proveedor falla).
+ *
+ * <p>El reenvio conserva el metodo de la peticion original. Se declaran solo los dos que usan
+ * las rutas (GET y POST), cada uno con su anotacion: un {@code @RequestMapping} sin metodo
+ * aceptaria cualquiera, mezclando metodos seguros y de escritura en el mismo endpoint.
  */
 @RestController
 public class FallbackController {
 
     private static final Logger log = LoggerFactory.getLogger(FallbackController.class);
 
-    @RequestMapping("/fallback/{servicio}")
-    public ProblemDetail fallback(@PathVariable String servicio, ServerWebExchange exchange) {
+    @GetMapping("/fallback/{servicio}")
+    public ProblemDetail fallbackLectura(@PathVariable String servicio, ServerWebExchange exchange) {
+        return fallback(servicio, exchange);
+    }
+
+    @PostMapping("/fallback/{servicio}")
+    public ProblemDetail fallbackEscritura(@PathVariable String servicio, ServerWebExchange exchange) {
+        return fallback(servicio, exchange);
+    }
+
+    private ProblemDetail fallback(String servicio, ServerWebExchange exchange) {
         Throwable causa = exchange.getAttribute(CIRCUITBREAKER_EXECUTION_EXCEPTION_ATTR);
         ProblemDetail problema;
         if (esTimeout(causa)) {

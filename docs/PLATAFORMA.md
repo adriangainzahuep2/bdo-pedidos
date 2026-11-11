@@ -104,7 +104,7 @@ arrancar.
    del proveedor), así que se fija en 16 s, por encima del `response-timeout` del gateway (15 s):
    el límite efectivo es el del cliente HTTP.
 
-**Cómo se comprueba.** `GatewayCircuitBreakerTest` (6 tests): microservicio caído → 503; tras 4
+**Cómo se comprueba.** `GatewayCircuitBreakerTest` (7 tests): microservicio caído → 503, también en escrituras (POST); tras 4
 fallos el circuito se abre **solo para su ruta**; abierto → la petición no llega; lento → 504;
 una respuesta de 1,5 s sí llega (el test falla si el TimeLimiter vuelve a 1 s, comprobado con
 una prueba de mutación); un `503` del microservicio pasa tal cual y no cuenta como fallo.

@@ -1,7 +1,9 @@
 package com.bdo.pedidos.cliente.aplicacion;
 
 import com.bdo.pedidos.cliente.modelo.Cliente;
+import com.bdo.pedidos.cliente.modelo.ResumenPedidos;
 import com.bdo.pedidos.cliente.persistencia.ClienteRepository;
+import com.bdo.pedidos.cliente.persistencia.PedidosConfirmadosRepository;
 import com.bdo.pedidos.cliente.web.error.ClienteNoEncontradoException;
 import com.bdo.pedidos.cliente.web.error.EmailDuplicadoException;
 import org.springframework.stereotype.Service;
@@ -20,10 +22,12 @@ import java.time.Clock;
 public class ClienteService {
 
     private final ClienteRepository repositorio;
+    private final PedidosConfirmadosRepository pedidosConfirmados;
     private final Clock clock;
 
-    public ClienteService(ClienteRepository repositorio, Clock clock) {
+    public ClienteService(ClienteRepository repositorio, PedidosConfirmadosRepository pedidosConfirmados, Clock clock) {
         this.repositorio = repositorio;
+        this.pedidosConfirmados = pedidosConfirmados;
         this.clock = clock;
     }
 
@@ -37,5 +41,13 @@ public class ClienteService {
     public Mono<Cliente> obtener(long id) {
         return repositorio.buscarPorId(id)
                 .switchIfEmpty(Mono.error(new ClienteNoEncontradoException(id)));
+    }
+
+    /**
+     * Pedidos confirmados del cliente segun la proyeccion local (alimentada por el evento
+     * PedidoConfirmado): no se consulta al servicio de pedidos.
+     */
+    public Mono<ResumenPedidos> pedidosConfirmados(long id) {
+        return obtener(id).then(pedidosConfirmados.resumen(id));
     }
 }

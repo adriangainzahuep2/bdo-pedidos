@@ -2,6 +2,7 @@ package com.bdo.pedidos.cliente.web;
 
 import com.bdo.pedidos.cliente.aplicacion.ClienteService;
 import com.bdo.pedidos.cliente.modelo.Cliente;
+import com.bdo.pedidos.cliente.modelo.ResumenPedidos;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -46,6 +47,12 @@ public class ClienteController {
     @GetMapping("/{id}")
     public Mono<ClienteResponse> obtener(@PathVariable long id) {
         return servicio.obtener(id).map(ClienteResponse::desde);
+    }
+
+    /** Resumen de pedidos confirmados (consistente en diferido: lo alimentan los eventos). */
+    @GetMapping("/{id}/pedidos-confirmados")
+    public Mono<ResumenPedidos> pedidosConfirmados(@PathVariable long id) {
+        return servicio.pedidosConfirmados(id);
     }
 
     /** Peticion de alta de cliente. */

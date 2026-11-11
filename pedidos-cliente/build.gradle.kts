@@ -28,6 +28,8 @@ dependencies {
     implementation(libs.micrometer.tracing.bridge.brave)
     implementation(libs.zipkin.reporter.brave)
     runtimeOnly(libs.micrometer.registry.prometheus)
+    // Eventos asincronos entre servicios: Spring Cloud Stream sobre RabbitMQ.
+    implementation(libs.spring.cloud.starter.stream.rabbit)
 
     implementation(libs.spring.cloud.starter.loadbalancer)
     implementation(libs.spring.cloud.starter.netflix.eureka.client)
@@ -37,6 +39,7 @@ dependencies {
     runtimeOnly(libs.r2dbc.postgresql)
 
     testImplementation(libs.spring.boot.starter.test)
+    testImplementation(libs.spring.cloud.stream.test.binder)
     testImplementation(libs.spring.security.test)
     testImplementation(libs.reactor.test)
 }
